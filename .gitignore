@@ -1,0 +1,5 @@
+/bin/
+/classifier-mcp
+/.vscode
+/.github/agents
+.DS_Store

@@ -1,0 +1,173 @@
+run:
+  timeout: 5m
+  issues-exit-code: 1
+  tests: true
+
+version: "2"
+
+output:
+  formats:
+    text:
+      path: stdout
+      print-issued-lines: true
+      print-linter-name: true
+
+linters:
+  default: none
+  enable:
+    - modernize
+    - godot
+    - copyloopvar
+    - gocyclo
+    - misspell
+    - rowserrcheck
+    - staticcheck
+    - asasalint
+    - asciicheck
+    - bidichk
+    - bodyclose
+    # - cyclop
+    - dupl
+    - durationcheck
+    - errcheck
+    - errname
+    - errorlint
+    - exhaustive
+    - exhaustruct_v5
+    - forbidigo
+    - gocheckcompilerdirectives
+    - gochecknoglobals
+    - gochecknoinits
+    - gochecksumtype
+    - gocognit
+    - goconst
+    - gocritic
+    - gomoddirectives
+    - gomodguard_v2
+    - goprintffuncname
+    - gosec
+    - govet
+    - ineffassign
+    - lll
+    - loggercheck
+    - makezero
+    - mirror
+    - mnd
+    - musttag
+    - nakedret
+    - nestif
+    - nilerr
+    - nilnil
+    - noctx
+    - nolintlint
+    - nosprintfhostport
+    - perfsprint
+    - prealloc
+    - predeclared
+    - promlinter
+    - protogetter
+    - reassign
+    - revive
+    - sloglint
+    - sqlclosecheck
+    - testableexamples
+    - testifylint
+    - tparallel
+    - unconvert
+    - unparam
+    - unused
+    - usestdlibvars
+    - wastedassign
+    - whitespace
+    - paralleltest
+
+  settings:
+    govet:
+      enable:
+        - shadow
+      disable:
+        - fieldalignment
+      settings:
+        shadow:
+          strict: true
+    gocyclo:
+      min-complexity: 15
+    dupl:
+      threshold: 115
+    goconst:
+      min-len: 2
+      min-occurrences: 2
+    misspell:
+      locale: US
+    lll:
+      line-length: 120
+    nolintlint:
+      require-explanation: true
+      require-specific: true
+    gocritic:
+      enabled-tags:
+        - diagnostic
+        - opinionated
+        - performance
+        - style
+      disabled-checks:
+        - dupImport
+        - octalLiteral
+        - hugeParam
+    exhaustruct_v5:
+      optional-patterns:
+        # GenerateSummary is deprecated, so requiring it conflicts with staticcheck.
+        - '^github\.com/openai/openai-go/v3/shared\.ReasoningParam#GenerateSummary$'
+      allow-empty: true
+      allow-empty-returns: true
+      allow-empty-declarations: true
+
+  exclusions:
+    generated: lax
+    paths:
+      - ^experiments/
+    rules:
+      - linters:
+          - perfsprint
+          - gochecknoglobals
+          - goconst
+          - gocognit
+          - gocritic
+          - gosec
+          - govet
+          - revive
+          - staticcheck
+          - unparam
+          - whitespace
+          - gocyclo
+          - cyclop
+          - prealloc
+        path: _test\.go
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
+  new: false
+
+severity:
+  default: error
+
+formatters:
+  enable:
+    - gofumpt
+    - goimports
+    - golines
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/n-r-w/classifier-mcp
+    golines:
+      max-len: 120
+  exclusions:
+    generated: lax
+    paths:
+      - third_party$
+      - builtin$
+      - loadtest$
+      - profile$
+      - bench$
