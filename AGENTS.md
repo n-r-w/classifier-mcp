@@ -1,11 +1,7 @@
 # Project Specific Rules and Information
 
 ## Project Overview
-Symbolic(LSP) Search MCP Server. Designed for AI agents, not for humans.
-
-## Goal
-1. Provide LLM agents with the ability to efficiently and accurately navigate code, minimizing the number of tokens (file content reading).
-2. CRITICAL: No unnecessary "noise" in responses to the client. Only information that helps the LLM agent understand where the needed symbol is located, what it represents, and how to reach it.
+MCP server providing the ability to classify files based on specified criteria.
 
 ## Tech stack
 1. `github.com/modelcontextprotocol/go-sdk` for MCP server implementation
@@ -14,39 +10,9 @@ Symbolic(LSP) Search MCP Server. Designed for AI agents, not for humans.
 4. `github.com/caarlos0/env/v11` for loading configuration from environment variables
 5. `log/slog` for logging (must use structured logging with context). Use global logger with context, instead of passing logger instances around. E.g. `slog.DebugContext`.
 
-## Documentation
-
-1. How to implement a new LSP adapter: `docs/lsp-server-implementation-guide.md`. MUST read before starting implementation.
-2. Implementation of a similar service in python to identify patterns of working with various LSP adapters: `/Users/rvnikulenk/dev/nrw/serena/src/solidlsp/language_servers/`. No need to copy algorithms from there, it's only for borrowing ideas and practical examples. Use it as well when problems arise with implementation, especially with `initialize_params`.
-
-## MCP Tools
-
-This server implements following tools:
-1. `get_symbols_overview`: high-level understanding of the code symbols in a file. Returns information containing symbols grouped by kind in a compact format.
-2. `find_symbol`: retrieves information on all symbols/code entities (classes, methods, etc.) based on the given name path pattern. The returned symbol information can be used for edits or further queries.
-3. `find_referencing_symbols`: Finds references to the symbol. Returns metadata and code snippets around each reference.
-
-Tool descriptions:
-- `internal/config/consts.go` - contains mcp system prompt (description for all tools) and individual tool descriptions
-- `internal/server/dto.go` - contains MCP request and response models (DTOs) for each tool
-- REMEMBER, ALL tool descriptions in `internal/config/consts.go` are intended for LLM and should be concise to save tokens,
-while still providing enough information for the LLM to understand what each tool does. NO NEED to duplicate information in tool descriptions that is already present in the system prompt.
-
 ## Instructions
 1. DON'T edit AGENTS.md and ifaceguard.cfg without DIRECT user request.
 2. Maintain consistency of environment variables between `.env.example`, `.env`, Taskfile.yml, scripts, code, and documentation.
-
-## Folder structure
-1. `internal/adapters/lsp/servers/{lsp server name}` - LSP server implementation
-2. `internal/adapters/lsp/servers/{lsp server name}/testdata` - test data for integration tests
-3. `internal/adapters/lsp/runtimelsp` - LSP session management
-4. `internal/adapters/lsp/stdlsp` - symbolic-search coordination for standard LSP adapters
-5. `internal/server` - MCP server implementation
-6. `internal/usecase/router` - routing mcp requests to specific LSP, according file extensions
-
-## Architecture
-1. Specific implementations of LSP servers should be as thin as possible and reuse helper packages `runtimelsp` and `stdlsp` where possible.
-2. At the same time, it should be possible to implement a completely custom adapter that implements the `router.ILSP` and `server.ILSPServer` interfaces without using `runtimelsp` and `stdlsp`. This is necessary to ensure architectural flexibility and the ability to support a wide range of LSP servers in the future.
 
 ## Coding rules
 1. All interfaces MUST be prefixed with uppercase `I` letter
