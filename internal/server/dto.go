@@ -3,12 +3,15 @@ package server
 import (
 	"encoding/json"
 	"errors"
+	"math/big"
 	"strings"
 
 	"github.com/samber/mo"
+
+	"github.com/n-r-w/classifier-mcp/internal/domain"
 )
 
-// classifyInput is the schema-validated inline tool request.
+// classifyInput is the schema-validated tool request.
 type classifyInput struct {
 	// Nonempty caller-ordered list with unique case-sensitive identities.
 	Objects []objectInput `json:"objects"`
@@ -20,20 +23,52 @@ type classifyInput struct {
 	ResultMode mo.Option[string] `json:"result_mode,omitzero"`
 }
 
-// objectInput associates one text source with a caller-defined identity.
+// objectInput associates one content source with a caller-defined identity.
 type objectInput struct {
 	// Nonempty identity used to associate the returned outcome with this source.
 	ID string `json:"id"`
-	// Inline source alternative checked by the published input schema.
-	Source textSource `json:"source"`
+	// Exclusive source alternative checked by the published input schema.
+	Source sourceInput `json:"source"`
 }
 
-// textSource carries the inline source discriminator and permits an empty text.
-type textSource struct {
-	// Discriminator fixed to text for the inline source alternative.
+// sourceInput retains schema-validated text or file fields until domain mapping.
+type sourceInput struct {
+	// Type selects text or file.
 	Type string `json:"type"`
-	// Caller content retained exactly; an empty string is permitted.
-	Text string `json:"text"`
+	// Text is present for inline content, including an empty string.
+	Text mo.Option[string] `json:"text,omitzero"`
+	// Path is present for a local file reference.
+	Path mo.Option[string] `json:"path,omitzero"`
+	// Lines is present when the caller selects an inclusive fragment.
+	Lines mo.Option[lineRangeInput] `json:"lines,omitzero"`
+}
+
+// lineRangeInput carries both required caller boundaries.
+type lineRangeInput struct {
+	// Start is the inclusive first line; numerical semantics belong to acquisition.
+	Start json.Number `json:"start"`
+	// End is the inclusive last line; numerical semantics belong to acquisition.
+	End json.Number `json:"end"`
+}
+
+// mapSource maps the exclusive schema-validated fields to a typed source.
+func mapSource(s sourceInput) domain.Source {
+	if s.Type == "text" {
+		return mo.Left[domain.TextSource, domain.FileSource](domain.TextSource{Text: s.Text.OrEmpty()})
+	}
+	lines := mo.None[domain.LineRange]()
+	if selected, present := s.Lines.Get(); present {
+		lines = mo.Some(
+			domain.LineRange{Start: parseIntegerBoundary(selected.Start), End: parseIntegerBoundary(selected.End)},
+		)
+	}
+	return mo.Right[domain.TextSource, domain.FileSource](domain.FileSource{Path: s.Path.OrEmpty(), Lines: lines})
+}
+
+// parseIntegerBoundary converts a schema-validated integer token, including exponent notation, exactly.
+func parseIntegerBoundary(number json.Number) *big.Int {
+	value, _ := new(big.Rat).SetString(number.String())
+	return value.Num()
 }
 
 // questionInput retains structured guidance until its assessment variant is selected.

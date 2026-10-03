@@ -12,16 +12,34 @@ type requestDTO struct {
 	Model string `json:"model"`
 	// All independent definitions for this one content, keyed by caller question ID.
 	Questions map[string]questionDTO `json:"questions"`
-	// Acquired inline text paired with the common classification context.
+	// Acquired text paired with the common classification context.
 	State stateDTO `json:"state"`
 }
 
-// stateDTO combines the caller's task with one acquired inline text.
+// stateDTO combines the caller's task with one acquired text.
 type stateDTO struct {
 	// Common caller context shared by the object list.
 	Task string `json:"task"`
-	// Exact inline text, including an allowed empty string.
+	// Exact acquired text, including an allowed empty string.
 	Content string `json:"content"`
+	// Source is present for local files and retains the resolved path and requested range.
+	Source mo.Option[sourceDTO] `json:"source,omitzero"`
+}
+
+// sourceDTO identifies the acquired local content in model state.
+type sourceDTO struct {
+	// Path is the resolved absolute file location.
+	Path string `json:"path"`
+	// Lines retains caller boundaries when a fragment was selected.
+	Lines mo.Option[lineRangeDTO] `json:"lines,omitzero"`
+}
+
+// lineRangeDTO carries the inclusive 1-based fragment boundaries.
+type lineRangeDTO struct {
+	// Start is the first requested line.
+	Start json.Number `json:"start"`
+	// End is the last requested line.
+	End json.Number `json:"end"`
 }
 
 // questionDTO preserves caller guidance and omits criteria when Noul has none.

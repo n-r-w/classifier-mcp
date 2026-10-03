@@ -85,8 +85,24 @@ func (s *startupSuite) TestMissingConfigurationExits() {
 
 // TestStdioConnection verifies initialization, ping, and classification through real startup assembly.
 func (s *startupSuite) TestStdioConnection() {
+	directory := s.T().TempDir()
+	s.Require().
+		NoError(os.WriteFile(filepath.Join(directory, "ticket.txt"), []byte("first\nprivate source\nlast\n"), 0o600))
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
 		s.Equal("1", request.URL.Query().Get("version"))
+		var body map[string]any
+		s.NoError(json.NewDecoder(request.Body).Decode(&body))
+		state := body["state"].(map[string]any)
+		if state["content"] != "hello" {
+			s.Equal("private source\n", state["content"])
+			s.Equal(
+				map[string]any{
+					"path":  filepath.Join(directory, "ticket.txt"),
+					"lines": map[string]any{"start": float64(2), "end": float64(2)},
+				},
+				state["source"],
+			)
+		}
 		_, err := w.Write([]byte(`{
   "model": "actual",
   "answers": {
@@ -112,6 +128,7 @@ func (s *startupSuite) TestStdioConnection() {
 	client := mcp.NewClient(identity, nil)
 	command := exec.CommandContext(ctx, s.binary)
 	command.Env = startupEnv(upstream.URL+"?version=1", "configured")
+	command.Dir = directory
 	transport := &mcp.CommandTransport{Command: command, TerminateDuration: 0}
 	session, err := client.Connect(ctx, transport, nil)
 	s.Require().NoError(err)
@@ -147,4 +164,16 @@ func (s *startupSuite) TestStdioConnection() {
 	s.Require().NoError(err)
 	s.False(result.IsError)
 	s.NotNil(result.StructuredContent)
+	params.Arguments = json.RawMessage(
+		`{"objects":[{"id":"file","source":{
+ "type":"file","path":"ticket.txt","lines":{"start":2,"end":2}
+ }}],"task":"task","questions":{"q":{"type":"noul","instructions":"condition"}}}`,
+	)
+	fileResult, fileErr := session.CallTool(ctx, params)
+	s.Require().NoError(fileErr)
+	s.False(fileResult.IsError)
+	s.NotNil(fileResult.StructuredContent)
+	data, marshalErr := json.Marshal(fileResult.StructuredContent)
+	s.Require().NoError(marshalErr)
+	s.NotContains(string(data), "private source")
 }

@@ -34,7 +34,19 @@ func mapRequest(request classify.Request, model string) requestDTO {
 		}
 		questions[id] = dto
 	}
-	return requestDTO{Model: model, Questions: questions, State: stateDTO{Task: request.Task, Content: request.Content}}
+	source := mo.None[sourceDTO]()
+	if location, present := request.Source.Get(); present {
+		lines := mo.None[lineRangeDTO]()
+		if selected, hasLines := location.Lines.Get(); hasLines {
+			lines = mo.Some(
+				lineRangeDTO{Start: json.Number(selected.Start.String()), End: json.Number(selected.End.String())},
+			)
+		}
+		source = mo.Some(sourceDTO{Path: location.Path, Lines: lines})
+	}
+	return requestDTO{Model: model, Questions: questions, State: stateDTO{
+		Task: request.Task, Content: request.Content, Source: source,
+	}}
 }
 
 // Evaluate validates external answers before producing an atomic outcome.

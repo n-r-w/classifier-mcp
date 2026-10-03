@@ -14,10 +14,26 @@ type IModel interface {
 	Evaluate(context.Context, Request) (Response, mo.Option[domain.Diagnostic])
 }
 
+// ISourceReader acquires local text and its resolved location.
+type ISourceReader interface {
+	// Read returns exact content and resolved metadata, or a concrete source diagnostic.
+	Read(context.Context, domain.FileSource) (AcquiredSource, mo.Option[domain.Diagnostic])
+}
+
+// AcquiredSource pairs content with its resolved file reference.
+type AcquiredSource struct {
+	// Content is the whole file or exact caller-selected fragment.
+	Content string
+	// Source retains the resolved path and caller boundaries.
+	Source domain.FileSource
+}
+
 // Request supplies one acquired content and common definitions.
 type Request struct {
 	// Exact acquired text for one independent model evaluation.
 	Content string
+	// Source is present only for acquired file content, with its resolved location.
+	Source mo.Option[domain.FileSource]
 	// Caller context shared by every object in the list.
 	Task string
 	// All independent definitions evaluated together for this content.

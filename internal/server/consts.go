@@ -1,6 +1,6 @@
 package server
 
-// inputSchema describes the inline request, including exclusive question variants and closed defined objects.
+// inputSchema describes the text and file request, including exclusive question variants and closed defined objects.
 const inputSchema = `{
   "type": "object",
   "properties": {
@@ -15,23 +15,29 @@ const inputSchema = `{
             "minLength": 1
           },
           "source": {
-            "type": "object",
-            "properties": {
-              "type": {
-                "type": "string",
-                "enum": [
-                  "text"
-                ]
+            "oneOf": [
+              {
+                "type": "object",
+                "properties": {"type": {"const": "text"}, "text": {"type": "string"}},
+                "required": ["type", "text"],
+                "additionalProperties": false
               },
-              "text": {
-                "type": "string"
+              {
+                "type": "object",
+                "properties": {
+                  "type": {"const": "file"},
+                  "path": {"type": "string"},
+                  "lines": {
+                    "type": "object",
+                    "properties": {"start": {"type": "integer"}, "end": {"type": "integer"}},
+                    "required": ["start", "end"],
+                    "additionalProperties": false
+                  }
+                },
+                "required": ["type", "path"],
+                "additionalProperties": false
               }
-            },
-            "required": [
-              "type",
-              "text"
-            ],
-            "additionalProperties": false
+            ]
           }
         },
         "required": [
@@ -504,6 +510,8 @@ const outputSchema = `{
                   "code": {
                     "type": "string",
                     "enum": [
+                      "invalid_source",
+                      "source_read_failed",
                       "upstream_error",
                       "request_failed",
                       "invalid_response",
@@ -513,7 +521,8 @@ const outputSchema = `{
                   "operation": {
                     "type": "string",
                     "enum": [
-                      "classify"
+                      "classify",
+                      "read_source"
                     ]
                   },
                   "message": {

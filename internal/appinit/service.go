@@ -5,6 +5,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/n-r-w/classifier-mcp/internal/adapters/localfile"
 	"github.com/n-r-w/classifier-mcp/internal/adapters/systemone"
 	"github.com/n-r-w/classifier-mcp/internal/config"
 	"github.com/n-r-w/classifier-mcp/internal/server"
@@ -19,6 +20,6 @@ func New(cfg config.Config) *mcp.Server {
 		CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse },
 	}
 	model := systemone.New(client, cfg.Endpoint, cfg.Model, cfg.APIKey)
-	usecase := classify.New(model)
+	usecase := classify.New(model, localfile.New())
 	return server.New(usecase)
 }

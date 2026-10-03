@@ -21,7 +21,7 @@ type Service struct {
 	output *jsonschema.Schema
 }
 
-// New registers the inline classification tool with the published request and result schemas.
+// New registers the classification tool with the published request and result schemas.
 func New(classifier IClassifier) *mcp.Server {
 	identity := &mcp.Implementation{
 		Name: "classifier-mcp", Version: "dev", Title: "Classifier MCP", Description: "", WebsiteURL: "", Icons: nil,
@@ -29,12 +29,13 @@ func New(classifier IClassifier) *mcp.Server {
 	srv := mcp.NewServer(identity, nil)
 	handler := &Service{classifier: classifier, input: compileSchema(inputSchema), output: compileSchema(outputSchema)}
 	tool := &mcp.Tool{
-		Meta:         nil,
-		Annotations:  nil,
-		Name:         "classify",
-		Title:        "",
-		Icons:        nil,
-		Description:  "Classify inline texts. result_mode: compact (default) or full. Question types: choice, noul, score.",
+		Meta:        nil,
+		Annotations: nil,
+		Name:        "classify",
+		Title:       "",
+		Icons:       nil,
+		Description: "Classify inline texts, local text files, or inclusive 1-based line ranges. " +
+			"result_mode: compact (default) or full. Question types: choice, noul, score.",
 		InputSchema:  json.RawMessage(inputSchema),
 		OutputSchema: json.RawMessage(outputSchema),
 	}

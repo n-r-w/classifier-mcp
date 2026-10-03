@@ -1,6 +1,6 @@
 # Classifier MCP
 
-A stdio MCP server that classifies inline text through a System One HTTP endpoint. Successful results contain assessments without source contents. Error diagnostics preserve upstream bodies and causes unchanged.
+A stdio MCP server that classifies inline text, local text files, and caller-selected file fragments through a System One HTTP endpoint. Successful results contain assessments without source contents. Error diagnostics preserve upstream bodies and causes unchanged.
 
 ## Startup
 
@@ -19,7 +19,17 @@ The server uses stdout for MCP and stderr for logs. Interrupt or terminate the p
 
 ## `classify`
 
-Supply a non-empty `objects` list, a non-blank `task`, and a non-empty `questions` map. Object IDs must be non-empty and unique within the call. Each object has a `source` with `type: "text"` and a required string `text`; an empty text is allowed. Only inline text is implemented. Local file sources are not accepted.
+Supply a non-empty `objects` list, a non-blank `task`, and a non-empty `questions` map. Object IDs must be non-empty and unique within the call. Each object has exactly one source form:
+
+- Inline text: `{"type": "text", "text": "content"}`. The string `text` is required; an empty string is allowed.
+- Whole local file: `{"type": "file", "path": "tickets.txt"}`.
+- Local file fragment: `{"type": "file", "path": "tickets.txt", "lines": {"start": 10, "end": 20}}`.
+
+Absolute paths identify files directly. Relative paths use native filesystem resolution against the server process's working directory, including directory symlinks followed by `..`. Windows drive-relative and root-relative paths use native drive rules. Files are read as UTF-8 text, regardless of extension. File state sent to System One includes the resolved path and any caller-supplied range.
+
+Both range boundaries are required integers, starting at 1 and inclusive. Every requested line must exist, and `start <= end` must hold. Lines end at LF; CRLF bytes and selected line terminators are preserved. A final terminator does not create another line. An empty file has zero lines and can be classified as a whole file. Each call reads its referenced content afresh.
+
+The server reports unreadable files, invalid UTF-8, blank paths, and numerical range failures per object. It does not shorten ranges, cache content, parse code, retrieve URLs, or extract binary documents. Text sources reject `path` and `lines`; file sources reject `text`.
 
 Each question has a non-empty ID, a `type`, and `instructions`. Instructions can be a non-blank string, an object, or an array. Numbers in structured instructions and criteria are passed unchanged, including identifiers larger than 2^53. Full Score legends preserve the caller's descriptions and numeric precision. Question types are:
 
@@ -33,7 +43,11 @@ Example arguments:
 
 ```json
 {
-  "objects": [{"id": "ticket", "source": {"type": "text", "text": "Checkout fails after Pay."}}],
+  "objects": [
+    {"id": "ticket", "source": {"type": "text", "text": "Checkout fails after Pay."}},
+    {"id": "whole", "source": {"type": "file", "path": "tickets.txt"}},
+    {"id": "fragment", "source": {"type": "file", "path": "tickets.txt", "lines": {"start": 10, "end": 20}}}
+  ],
   "task": "Assess support tickets.",
   "questions": {
     "team": {"type": "choice", "instructions": "Which team owns this?", "criteria": {"payments": "Billing", "other": null}},
@@ -46,6 +60,6 @@ Example arguments:
 
 Results contain one entry per object in input order. Success entries contain `id`, `status: "ok"`, the actual response `model`, and complete `answers`. Optional `usage` contains only reported `input_tokens`, `output_tokens`, and `cost`; OpenRouter reports cost in credits. Missing or null usage and confidence values are omitted; reported zero values are retained.
 
-Invalid shared arguments return a text-only tool error before HTTP work. A provider failure or incompatible answer returns an atomic object entry with `status: "error"` and a diagnostic containing `code`, `operation`, and `message`, plus available HTTP details. No partial answer set is returned. Error diagnostics preserve complete upstream bodies and causes unchanged, including ordinary text, malformed JSON, and any echoed source contents or credentials.
+Invalid shared arguments, conflicting source forms, and unknown defined fields return a text-only tool error before file reads or HTTP work. A source failure, provider failure, or incompatible answer returns an atomic object entry with `status: "error"` and a diagnostic containing `code`, `operation`, and `message`, plus available HTTP details. Source diagnostics use `operation: "read_source"` and `code: "invalid_source"`, `"source_read_failed"`, or `"canceled"`; they omit HTTP attempt metadata. Range failures identify the requested boundaries and, when the file was read, its available line count. Other objects keep their successful results. No partial answer set is returned. Error diagnostics preserve complete upstream bodies and causes unchanged, including ordinary text, malformed JSON, and any echoed source contents or credentials.
 
 Valid calls return the same `results` object in MCP `structuredContent` and one JSON text block. `isError` is true only when every object fails; partial success has `isError: false`. Unknown tools are protocol errors. The tool publishes input and output JSON schemas through `tools/list`.

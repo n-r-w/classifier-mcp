@@ -6,7 +6,7 @@ import "github.com/samber/mo"
 type Diagnostic struct {
 	// Classification failure category used by the caller to distinguish causes.
 	Code string
-	// Operation that failed; inline model execution reports classify.
+	// Operation that failed: read_source for acquisition or classify for model execution.
 	Operation string
 	// Concrete cause retained without masking or filtering.
 	Message string

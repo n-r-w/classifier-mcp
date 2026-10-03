@@ -1,7 +1,11 @@
 // Package domain contains classification assessment models.
 package domain
 
-import "github.com/samber/mo"
+import (
+	"math/big"
+
+	"github.com/samber/mo"
+)
 
 // Question represents exactly one of the three question definitions.
 type Question = mo.Either3[ChoiceQuestion, NoulQuestion, ScoreQuestion]
@@ -92,4 +96,29 @@ type Usage struct {
 // HasValues reports whether the provider supplied at least one usage value.
 func (u Usage) HasValues() bool {
 	return u.InputTokens.IsSome() || u.OutputTokens.IsSome() || u.Cost.IsSome()
+}
+
+// Source identifies either caller text or a local file to acquire.
+type Source = mo.Either[TextSource, FileSource]
+
+// TextSource contains caller-supplied text, including an empty string.
+type TextSource struct {
+	// Text is sent unchanged to the classifier.
+	Text string
+}
+
+// FileSource identifies a local text file and optional caller-selected fragment.
+type FileSource struct {
+	// Path is absolute or relative to the process working directory.
+	Path string
+	// Lines selects existing inclusive 1-based boundaries; None selects the whole file.
+	Lines mo.Option[LineRange]
+}
+
+// LineRange identifies a contiguous inclusive fragment in a text file.
+type LineRange struct {
+	// Start is the first requested line, starting at 1; the shared integer is read-only.
+	Start *big.Int
+	// End is the last requested line; the shared integer is read-only.
+	End *big.Int
 }

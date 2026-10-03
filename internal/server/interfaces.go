@@ -8,13 +8,13 @@ import (
 	"github.com/n-r-w/classifier-mcp/internal/domain"
 )
 
-// IClassifier evaluates a validated list of inline texts.
+// IClassifier evaluates a validated list of text and file sources.
 type IClassifier interface {
 	// Classify accepts validated shared definitions and returns one atomic entry per object, in order.
 	Classify(context.Context, Command) []Outcome
 }
 
-// Command carries validated common definitions and inline objects.
+// Command carries validated common definitions and source objects.
 type Command struct {
 	// Validated caller list whose order defines the outcome order.
 	Objects []Object
@@ -26,12 +26,12 @@ type Command struct {
 	Full bool
 }
 
-// Object associates inline content with caller identity.
+// Object associates a content source with caller identity.
 type Object struct {
 	// Nonempty case-sensitive identity copied to its outcome.
 	ID string
-	// Acquired inline content, including an allowed empty string.
-	Text string
+	// Exclusive inline text or local file reference.
+	Source domain.Source
 }
 
 // Outcome is exactly one success or failure entry in the completed list.

@@ -25,7 +25,7 @@ func parseCommand(input classifyInput) (Command, error) {
 			return Command{}, fmt.Errorf("invalid arguments: objects[%d].id duplicates an earlier id", i)
 		}
 		ids[object.ID] = struct{}{}
-		objects = append(objects, Object{ID: object.ID, Text: object.Source.Text})
+		objects = append(objects, Object{ID: object.ID, Source: mapSource(object.Source)})
 	}
 	questions := make(map[string]domain.Question, len(input.Questions))
 	for id, question := range input.Questions {
