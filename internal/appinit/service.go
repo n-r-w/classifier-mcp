@@ -19,7 +19,8 @@ func New(cfg config.Config) *mcp.Server {
 		// Returning redirects as endpoint errors prevents sending credentials or content to another URL.
 		CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse },
 	}
-	model := systemone.New(client, cfg.Endpoint, cfg.Model, cfg.APIKey)
-	usecase := classify.New(model, localfile.New())
+	model := systemone.New(client, cfg.Endpoint, cfg.Model, cfg.APIKey,
+		cfg.MaxParallelism, cfg.MaxAttempts, cfg.RetryDelay)
+	usecase := classify.New(model, localfile.New(), cfg.MaxParallelism)
 	return server.New(usecase)
 }

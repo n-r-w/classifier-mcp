@@ -18,6 +18,6 @@ type Diagnostic struct {
 	UpstreamRequestID mo.Option[string]
 	// Attempts is absent before HTTP work; a reported value includes the first attempt.
 	Attempts mo.Option[int]
-	// RetryAfterSeconds retains a reported zero delay even though requests are not retried.
+	// RetryAfterSeconds is the final supplied delay in seconds; a reported zero remains present.
 	RetryAfterSeconds mo.Option[float64]
 }

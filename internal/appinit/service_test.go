@@ -108,9 +108,17 @@ const validArguments = `{
 
 // connect assembles the application with explicit HTTP settings and connects an in-memory MCP client.
 func (s *classificationSuite) connect(handler http.HandlerFunc, timeout time.Duration) *mcp.ClientSession {
+	return s.connectWithConfig(handler, config.Config{
+		Endpoint: "", Model: "configured-alias", APIKey: "secret-key", HTTPTimeout: timeout,
+		MaxParallelism: 4, MaxAttempts: 3, RetryDelay: time.Second,
+	})
+}
+
+// connectWithConfig supplies explicit operational limits to the real application assembly.
+func (s *classificationSuite) connectWithConfig(handler http.HandlerFunc, cfg config.Config) *mcp.ClientSession {
 	upstream := httptest.NewServer(handler)
 	s.T().Cleanup(upstream.Close)
-	cfg := config.Config{Endpoint: upstream.URL, Model: "configured-alias", APIKey: "secret-key", HTTPTimeout: timeout}
+	cfg.Endpoint = upstream.URL
 	application := New(cfg)
 	a, b := mcp.NewInMemoryTransports()
 	serverSession, err := application.Connect(s.T().Context(), a, nil)
@@ -392,7 +400,11 @@ func (s *classificationSuite) TestAtomicResponseErrorsAndUsageOmission() {
 			diagnostic := object["error"].(map[string]any)
 			s.Equal(test.code, diagnostic["code"])
 			s.Equal("classify", diagnostic["operation"])
-			s.InDelta(float64(1), diagnostic["attempts"], 0)
+			expectedAttempts := 1
+			if test.status == http.StatusTooManyRequests {
+				expectedAttempts = 3
+			}
+			s.InDelta(expectedAttempts, diagnostic["attempts"], 0)
 			s.InDelta(float64(test.status), diagnostic["http_status"], 0)
 			s.Equal("request-id", diagnostic["upstream_request_id"])
 			s.Equal(test.body, diagnostic["upstream_body"])

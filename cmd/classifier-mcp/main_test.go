@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -45,7 +46,9 @@ func startupEnv(endpoint, model string) []string {
 	for _, value := range values {
 		key, _, _ := strings.Cut(value, "=")
 		if strings.EqualFold(key, "SYSTEM_ONE_ENDPOINT") || strings.EqualFold(key, "SYSTEM_ONE_MODEL") ||
-			strings.EqualFold(key, "SYSTEM_ONE_API_KEY") || strings.EqualFold(key, "SYSTEM_ONE_HTTP_TIMEOUT") {
+			strings.EqualFold(key, "SYSTEM_ONE_API_KEY") || strings.EqualFold(key, "SYSTEM_ONE_HTTP_TIMEOUT") ||
+			strings.EqualFold(key, "SYSTEM_ONE_MAX_PARALLELISM") || strings.EqualFold(key, "SYSTEM_ONE_MAX_ATTEMPTS") ||
+			strings.EqualFold(key, "SYSTEM_ONE_RETRY_DELAY") {
 			continue
 		}
 		result = append(result, value)
@@ -56,6 +59,9 @@ func startupEnv(endpoint, model string) []string {
 		"SYSTEM_ONE_MODEL="+model,
 		"SYSTEM_ONE_API_KEY=",
 		"SYSTEM_ONE_HTTP_TIMEOUT=60s",
+		"SYSTEM_ONE_MAX_PARALLELISM=4",
+		"SYSTEM_ONE_MAX_ATTEMPTS=3",
+		"SYSTEM_ONE_RETRY_DELAY=1s",
 	)
 }
 
@@ -88,7 +94,15 @@ func (s *startupSuite) TestStdioConnection() {
 	directory := s.T().TempDir()
 	s.Require().
 		NoError(os.WriteFile(filepath.Join(directory, "ticket.txt"), []byte("first\nprivate source\nlast\n"), 0o600))
+	var attempts atomic.Int32
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		if attempts.Add(1) == 1 {
+			w.Header().Set("Retry-After", "0")
+			w.WriteHeader(http.StatusTooManyRequests)
+			_, err := w.Write([]byte("overloaded"))
+			s.NoError(err)
+			return
+		}
 		s.Equal("1", request.URL.Query().Get("version"))
 		var body map[string]any
 		s.NoError(json.NewDecoder(request.Body).Decode(&body))
@@ -176,4 +190,5 @@ func (s *startupSuite) TestStdioConnection() {
 	data, marshalErr := json.Marshal(fileResult.StructuredContent)
 	s.Require().NoError(marshalErr)
 	s.NotContains(string(data), "private source")
+	s.Equal(int32(3), attempts.Load())
 }

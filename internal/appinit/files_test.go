@@ -20,11 +20,11 @@ func (s *classificationSuite) TestLocalSources() {
 	s.Require().NoError(err)
 	relative, err := filepath.Rel(cwd, path)
 	s.Require().NoError(err)
-	var states []map[string]any
+	states := make(chan map[string]any, 4)
 	session := s.connect(func(w http.ResponseWriter, r *http.Request) {
 		var body map[string]any
 		s.NoError(json.NewDecoder(r.Body).Decode(&body))
-		states = append(states, body["state"].(map[string]any))
+		states <- body["state"].(map[string]any)
 		_, writeErr := w.Write([]byte(validAnswer))
 		s.NoError(writeErr)
 	}, time.Minute)
@@ -68,20 +68,19 @@ func (s *classificationSuite) TestLocalSources() {
 		s.Equal(object.(map[string]any)["id"], entries[i].(map[string]any)["id"])
 	}
 	s.Require().Len(states, 4)
-	s.Equal(map[string]any{"task": "Classify", "content": "private source inline"}, states[0])
-	s.Equal(map[string]any{
-		"task": "Classify", "content": text,
-		"source": map[string]any{"path": cwd + string(os.PathSeparator) + relative},
-	}, states[1])
-	s.Equal(
-		map[string]any{
-			"task":    "Classify",
-			"content": "\r\nlast",
-			"source":  map[string]any{"path": path, "lines": map[string]any{"start": float64(2), "end": float64(3)}},
+	acquired := []map[string]any{<-states, <-states, <-states, <-states}
+	s.ElementsMatch([]map[string]any{
+		{"task": "Classify", "content": "private source inline"},
+		{
+			"task": "Classify", "content": text,
+			"source": map[string]any{"path": cwd + string(os.PathSeparator) + relative},
 		},
-		states[2],
-	)
-	s.Equal("private source after", states[3]["content"])
+		{
+			"task": "Classify", "content": "\r\nlast",
+			"source": map[string]any{"path": path, "lines": map[string]any{"start": float64(2), "end": float64(3)}},
+		},
+		{"task": "Classify", "content": "private source after"},
+	}, acquired)
 	for i := 3; i < 8; i++ {
 		entry := entries[i].(map[string]any)
 		s.Equal("error", entry["status"])

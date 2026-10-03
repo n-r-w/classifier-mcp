@@ -25,6 +25,9 @@ func (s *configSuite) SetupTest() {
 	s.T().Setenv("SYSTEM_ONE_MODEL", "fixture-model")
 	s.T().Setenv("SYSTEM_ONE_API_KEY", "")
 	s.T().Setenv("SYSTEM_ONE_HTTP_TIMEOUT", "60s")
+	s.T().Setenv("SYSTEM_ONE_MAX_PARALLELISM", "")
+	s.T().Setenv("SYSTEM_ONE_MAX_ATTEMPTS", "")
+	s.T().Setenv("SYSTEM_ONE_RETRY_DELAY", "")
 }
 
 // TestRequiredSettings checks explicit model and endpoint requirements and safe URL validation.
@@ -49,6 +52,41 @@ func (s *configSuite) TestRequiredSettings() {
 	_, err = Load()
 	s.Require().Error(err)
 	s.NotContains(err.Error(), "secret")
+}
+
+// TestOperationalControls rejects malformed and out-of-range execution settings by name.
+func (s *configSuite) TestOperationalControls() {
+	for name, values := range map[string][]string{
+		"SYSTEM_ONE_MAX_PARALLELISM": {"0", "-1", "invalid"},
+		"SYSTEM_ONE_MAX_ATTEMPTS":    {"0", "-1", "invalid"},
+		"SYSTEM_ONE_RETRY_DELAY":     {"-1s", "invalid"},
+	} {
+		s.Run(name, func() {
+			for _, value := range values {
+				s.T().Setenv(name, value)
+				_, err := Load()
+				s.Require().Error(err)
+				s.Contains(err.Error(), name)
+			}
+		})
+	}
+}
+
+// TestOperationalDefaultsAndOverrides checks isolated defaults and environment control overrides.
+func (s *configSuite) TestOperationalDefaultsAndOverrides() {
+	cfg, err := Load()
+	s.Require().NoError(err)
+	s.Equal(4, cfg.MaxParallelism)
+	s.Equal(3, cfg.MaxAttempts)
+	s.Equal(time.Second, cfg.RetryDelay)
+	s.T().Setenv("SYSTEM_ONE_MAX_PARALLELISM", "2")
+	s.T().Setenv("SYSTEM_ONE_MAX_ATTEMPTS", "1")
+	s.T().Setenv("SYSTEM_ONE_RETRY_DELAY", "0s")
+	cfg, err = Load()
+	s.Require().NoError(err)
+	s.Equal(2, cfg.MaxParallelism)
+	s.Equal(1, cfg.MaxAttempts)
+	s.Zero(cfg.RetryDelay)
 }
 
 // TestHTTPTimeout checks the default, duration override, and rejected operational settings.

@@ -8,6 +8,8 @@ import (
 	"github.com/n-r-w/classifier-mcp/internal/domain"
 )
 
+//go:generate go tool mockgen -source=interfaces.go -destination=interfaces_mock.go -package=classify
+
 // IModel evaluates all questions for one text.
 type IModel interface {
 	// Evaluate returns None for the diagnostic only for a complete compatible answer set.

@@ -21,7 +21,7 @@ func (s *classificationSuite) TestNonFiniteRetryDelayKeepsObjectEnvelope() {
 	s.NotContains(diagnostic, "retry_after_seconds")
 }
 
-// TestZeroRetryDelayRetainsReportedMetadata checks zero delay without retrying the failed HTTP request.
+// TestZeroRetryDelayRetainsReportedMetadata checks the final supplied zero and actual overload attempts.
 func (s *classificationSuite) TestZeroRetryDelayRetainsReportedMetadata() {
 	var calls atomic.Int64
 	session := s.connect(func(w http.ResponseWriter, _ *http.Request) {
@@ -35,6 +35,6 @@ func (s *classificationSuite) TestZeroRetryDelayRetainsReportedMetadata() {
 	s.Require().True(result.IsError)
 	diagnostic := s.structured(result)["results"].([]any)[0].(map[string]any)["error"].(map[string]any)
 	s.InDelta(0, diagnostic["retry_after_seconds"], 0)
-	s.InDelta(1, diagnostic["attempts"], 0)
-	s.Equal(int64(1), calls.Load())
+	s.InDelta(3, diagnostic["attempts"], 0)
+	s.Equal(int64(3), calls.Load())
 }

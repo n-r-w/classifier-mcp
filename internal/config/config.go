@@ -21,37 +21,67 @@ type Config struct {
 	APIKey string `env:"SYSTEM_ONE_API_KEY"`
 	// HTTPTimeout bounds each complete HTTP request, including response-body reads.
 	HTTPTimeout time.Duration `env:"SYSTEM_ONE_HTTP_TIMEOUT" envDefault:"60s"`
+	// MaxParallelism bounds active model HTTP requests across all calls in the process.
+	MaxParallelism int `env:"SYSTEM_ONE_MAX_PARALLELISM" envDefault:"4"`
+	// MaxAttempts includes the first HTTP attempt and explicit overload retries.
+	MaxAttempts int `env:"SYSTEM_ONE_MAX_ATTEMPTS" envDefault:"3"`
+	// RetryDelay is used after overload when the endpoint supplies no valid Retry-After.
+	RetryDelay time.Duration `env:"SYSTEM_ONE_RETRY_DELAY" envDefault:"1s"`
 }
 
 // Load reads and validates process environment settings.
 func Load() (Config, error) {
 	cfg := Config{}
 	if err := env.Parse(&cfg); err != nil {
-		var parseError env.ParseError
-		if errors.As(err, &parseError) && parseError.Name == "HTTPTimeout" {
-			return Config{}, fmt.Errorf("SYSTEM_ONE_HTTP_TIMEOUT: %w", parseError.Err)
+		if parseError, ok := errors.AsType[env.ParseError](err); ok {
+			settings := map[string]string{
+				"HTTPTimeout":    "SYSTEM_ONE_HTTP_TIMEOUT",
+				"MaxParallelism": "SYSTEM_ONE_MAX_PARALLELISM",
+				"MaxAttempts":    "SYSTEM_ONE_MAX_ATTEMPTS",
+				"RetryDelay":     "SYSTEM_ONE_RETRY_DELAY",
+			}
+			if setting, present := settings[parseError.Name]; present {
+				return Config{}, fmt.Errorf("%s: %w", setting, parseError.Err)
+			}
 		}
 		return Config{}, fmt.Errorf("load configuration: %w", err)
 	}
-	if strings.TrimSpace(cfg.Endpoint) == "" {
-		return Config{}, errors.New("SYSTEM_ONE_ENDPOINT is required")
+	if err := cfg.validate(); err != nil {
+		return Config{}, err
 	}
-	if strings.TrimSpace(cfg.Model) == "" {
-		return Config{}, errors.New("SYSTEM_ONE_MODEL is required")
+	return cfg, nil
+}
+
+// validate checks connection and execution controls before the application accepts calls.
+func (c Config) validate() error {
+	if strings.TrimSpace(c.Endpoint) == "" {
+		return errors.New("SYSTEM_ONE_ENDPOINT is required")
 	}
-	endpoint, err := url.Parse(cfg.Endpoint)
+	if strings.TrimSpace(c.Model) == "" {
+		return errors.New("SYSTEM_ONE_MODEL is required")
+	}
+	endpoint, err := url.Parse(c.Endpoint)
 	if err != nil || endpoint.Host == "" || (endpoint.Scheme != "https" && endpoint.Scheme != "http") ||
 		endpoint.User != nil ||
 		endpoint.Fragment != "" {
-		return Config{}, errors.New(
+		return errors.New(
 			"SYSTEM_ONE_ENDPOINT must be an HTTP(S) URL without credentials or fragment",
 		)
 	}
-	if strings.ContainsAny(cfg.APIKey, "\r\n") {
-		return Config{}, errors.New("SYSTEM_ONE_API_KEY must not contain a line break")
+	if strings.ContainsAny(c.APIKey, "\r\n") {
+		return errors.New("SYSTEM_ONE_API_KEY must not contain a line break")
 	}
-	if cfg.HTTPTimeout <= 0 {
-		return Config{}, errors.New("SYSTEM_ONE_HTTP_TIMEOUT must be greater than zero")
+	if c.HTTPTimeout <= 0 {
+		return errors.New("SYSTEM_ONE_HTTP_TIMEOUT must be greater than zero")
 	}
-	return cfg, nil
+	if c.MaxParallelism <= 0 {
+		return errors.New("SYSTEM_ONE_MAX_PARALLELISM must be greater than zero")
+	}
+	if c.MaxAttempts <= 0 {
+		return errors.New("SYSTEM_ONE_MAX_ATTEMPTS must be greater than zero")
+	}
+	if c.RetryDelay < 0 {
+		return errors.New("SYSTEM_ONE_RETRY_DELAY must be non-negative")
+	}
+	return nil
 }

@@ -10,12 +10,19 @@ Set these environment variables in the MCP client's server configuration or in t
 - `SYSTEM_ONE_MODEL`: required model identifier, passed unchanged to the endpoint. No default.
 - `SYSTEM_ONE_HTTP_TIMEOUT`: positive duration for one complete HTTP request; default `60s`. Examples: `30s`, `2m`, `250ms`.
 - `SYSTEM_ONE_API_KEY`: optional bearer credential. OpenRouter requires it; unauthenticated compatible endpoints can omit it.
+- `SYSTEM_ONE_MAX_PARALLELISM`: positive integer limiting active model HTTP requests across all concurrent MCP calls; default `4`.
+- `SYSTEM_ONE_MAX_ATTEMPTS`: positive integer counting the initial HTTP attempt and overload retries per object; default `3`. Set `1` to disable retries.
+- `SYSTEM_ONE_RETRY_DELAY`: non-negative fallback duration after overload when no valid `Retry-After` is supplied; default `1s`. Set `0s` for an immediate fallback retry.
 
 See [.env.example](.env.example). Endpoint URLs can include a query. Keep credentials in `SYSTEM_ONE_API_KEY`; endpoint user information and fragments are rejected. Missing endpoint or model settings stop startup with exit code 1.
 
 Run `task build`, then configure the MCP client to launch `bin/classifier-mcp` (`bin/classifier-mcp.exe` on Windows). The executable inherits its environment; it does not read `.env`.
 
-The server uses stdout for MCP and stderr for logs. Interrupt or terminate the process to stop it. HTTP requests use `SYSTEM_ONE_HTTP_TIMEOUT`, which defaults to 60 seconds. Requests run sequentially within each tool call and are sent once; upstream overload responses are returned without retries.
+The server uses stdout for MCP and stderr for logs. Interrupt or terminate the process to stop it. Invalid operational settings stop startup with a diagnostic naming the setting.
+
+Objects run in parallel, with one shared process-wide HTTP request bound. Defaults allow four active requests and at most three attempts per object to limit endpoint load. Only explicit HTTP `429` and `529` responses trigger retries. A valid `Retry-After` delay in seconds or as an HTTP date replaces the fallback delay, including a supplied zero. The server respects that delay without a cap and releases HTTP capacity while waiting. A past HTTP date means zero delay. Missing or invalid delay headers use `SYSTEM_ONE_RETRY_DELAY`.
+
+`SYSTEM_ONE_HTTP_TIMEOUT` applies separately to each complete HTTP attempt. Capacity and retry waits observe call cancellation. A large supplied retry delay can keep a call waiting until it is canceled. Network failures, ambiguous timeouts, unrelated HTTP statuses, and incompatible model answers are returned without automatic retries.
 
 ## `classify`
 
@@ -61,5 +68,9 @@ Example arguments:
 Results contain one entry per object in input order. Success entries contain `id`, `status: "ok"`, the actual response `model`, and complete `answers`. Optional `usage` contains only reported `input_tokens`, `output_tokens`, and `cost`; OpenRouter reports cost in credits. Missing or null usage and confidence values are omitted; reported zero values are retained.
 
 Invalid shared arguments, conflicting source forms, and unknown defined fields return a text-only tool error before file reads or HTTP work. A source failure, provider failure, or incompatible answer returns an atomic object entry with `status: "error"` and a diagnostic containing `code`, `operation`, and `message`, plus available HTTP details. Source diagnostics use `operation: "read_source"` and `code: "invalid_source"`, `"source_read_failed"`, or `"canceled"`; they omit HTTP attempt metadata. Range failures identify the requested boundaries and, when the file was read, its available line count. Other objects keep their successful results. No partial answer set is returned. Error diagnostics preserve complete upstream bodies and causes unchanged, including ordinary text, malformed JSON, and any echoed source contents or credentials.
+
+Model diagnostics include the actual `attempts` count after HTTP work. Exhausted overload retries retain the final HTTP status, complete body, cause, request identifier, and supplied `retry_after_seconds`, including zero. Cancellation before an HTTP attempt omits `attempts`.
+
+MCP cancellation stops capacity waits, retry waits, and pending HTTP operations. A canceled client call may receive no response. When a final list response is available, completed successes remain and unfinished objects receive `canceled` outcomes in input order.
 
 Valid calls return the same `results` object in MCP `structuredContent` and one JSON text block. `isError` is true only when every object fails; partial success has `isError: false`. Unknown tools are protocol errors. The tool publishes input and output JSON schemas through `tools/list`.
