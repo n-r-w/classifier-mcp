@@ -2,40 +2,149 @@ package main
 
 import (
 	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/stretchr/testify/suite"
 )
 
-func TestStdioConnection(t *testing.T) {
-	t.Parallel()
+// startupSuite checks the built executable over stdio with isolated environment settings.
+type startupSuite struct {
+	// Suite supplies assertion and lifecycle state for the isolated entry-point cases.
+	suite.Suite
+	// Temporary platform executable built once for the real startup checks.
+	binary string
+}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
+// TestStartup exercises process exit and classification through the command entry point.
+func TestStartup(t *testing.T) { t.Parallel(); suite.Run(t, new(startupSuite)) }
 
-	binary := filepath.Join(t.TempDir(), "classifier-mcp")
-	build := exec.CommandContext(ctx, "go", "build", "-o", binary, ".")
-	if output, err := build.CombinedOutput(); err != nil {
-		t.Fatalf("build server: %v\n%s", err, output)
+// SetupSuite builds one temporary executable with the platform-appropriate suffix.
+func (s *startupSuite) SetupSuite() {
+	s.binary = filepath.Join(s.T().TempDir(), "classifier-mcp")
+	if os.PathSeparator == '\\' {
+		s.binary += ".exe"
 	}
+	build := exec.CommandContext(s.T().Context(), "go", "build", "-o", s.binary, ".")
+	output, err := build.CombinedOutput()
+	s.Require().NoError(err, string(output))
+}
 
-	client := mcp.NewClient(&mcp.Implementation{Name: "test-client", Version: "dev"}, nil)
-	session, err := client.Connect(ctx, &mcp.CommandTransport{
-		Command: exec.CommandContext(ctx, binary),
-	}, nil)
-	if err != nil {
-		t.Fatalf("connect to server: %v", err)
-	}
-	defer func() {
-		if err := session.Close(); err != nil {
-			t.Errorf("close session: %v", err)
+// startupEnv isolates child-process connection settings from the parent process environment.
+func startupEnv(endpoint, model string) []string {
+	values := os.Environ()
+	result := make([]string, 0, len(values)+4)
+	for _, value := range values {
+		key, _, _ := strings.Cut(value, "=")
+		if strings.EqualFold(key, "SYSTEM_ONE_ENDPOINT") || strings.EqualFold(key, "SYSTEM_ONE_MODEL") ||
+			strings.EqualFold(key, "SYSTEM_ONE_API_KEY") || strings.EqualFold(key, "SYSTEM_ONE_HTTP_TIMEOUT") {
+			continue
 		}
-	}()
-
-	if err := session.Ping(ctx, nil); err != nil {
-		t.Fatalf("ping server: %v", err)
+		result = append(result, value)
 	}
+	return append(
+		result,
+		"SYSTEM_ONE_ENDPOINT="+endpoint,
+		"SYSTEM_ONE_MODEL="+model,
+		"SYSTEM_ONE_API_KEY=",
+		"SYSTEM_ONE_HTTP_TIMEOUT=60s",
+	)
+}
+
+// TestMissingConfigurationExits requires a nonzero process exit that names the missing setting.
+func (s *startupSuite) TestMissingConfigurationExits() {
+	for _, test := range []struct {
+		// endpoint is the explicit process setting; empty triggers its required-setting case.
+		endpoint string
+		// model is the explicit process identifier; empty triggers its required-setting case.
+		model string
+		// missing names the setting that the process exit diagnostic must identify.
+		missing string
+	}{
+		{endpoint: "", model: "", missing: "SYSTEM_ONE_ENDPOINT"},
+		{endpoint: "http://localhost:1234/systemone", model: "", missing: "SYSTEM_ONE_MODEL"},
+	} {
+		command := exec.CommandContext(s.T().Context(), s.binary)
+		command.Env = startupEnv(test.endpoint, test.model)
+		output, err := command.CombinedOutput()
+		s.Require().Error(err)
+		var exit *exec.ExitError
+		s.Require().ErrorAs(err, &exit)
+		s.Equal(1, exit.ExitCode())
+		s.Contains(string(output), test.missing)
+	}
+}
+
+// TestStdioConnection verifies initialization, ping, and classification through real startup assembly.
+func (s *startupSuite) TestStdioConnection() {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		s.Equal("1", request.URL.Query().Get("version"))
+		_, err := w.Write([]byte(`{
+  "model": "actual",
+  "answers": {
+    "q": {
+      "type": "noul",
+      "noul": 0
+    }
+  }
+}`))
+		s.NoError(err)
+	}))
+	defer upstream.Close()
+	ctx, cancel := context.WithTimeout(s.T().Context(), 30*time.Second)
+	defer cancel()
+	identity := &mcp.Implementation{
+		Name:        "test-client",
+		Version:     "dev",
+		Title:       "",
+		Description: "",
+		WebsiteURL:  "",
+		Icons:       nil,
+	}
+	client := mcp.NewClient(identity, nil)
+	command := exec.CommandContext(ctx, s.binary)
+	command.Env = startupEnv(upstream.URL+"?version=1", "configured")
+	transport := &mcp.CommandTransport{Command: command, TerminateDuration: 0}
+	session, err := client.Connect(ctx, transport, nil)
+	s.Require().NoError(err)
+	defer func() { s.NoError(session.Close()) }()
+	s.Require().NoError(session.Ping(ctx, nil))
+	params := &mcp.CallToolParams{
+		Meta:           nil,
+		Name:           "classify",
+		InputResponses: nil,
+		RequestState:   "",
+		Arguments: json.RawMessage(
+			`{
+  "objects": [
+    {
+      "id": "x",
+      "source": {
+        "type": "text",
+        "text": "hello"
+      }
+    }
+  ],
+  "task": "task",
+  "questions": {
+    "q": {
+      "type": "noul",
+      "instructions": "condition"
+    }
+  }
+}`,
+		),
+	}
+	result, err := session.CallTool(ctx, params)
+	s.Require().NoError(err)
+	s.False(result.IsError)
+	s.NotNil(result.StructuredContent)
 }

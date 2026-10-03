@@ -63,17 +63,17 @@ Improve the main LLM's efficiency and reduce its cost of processing files by del
   - Origin: source, the user's decision to preserve partial success.
   - Goal: Avoid repeating successful classification work.
   - Goal achievement: Partial. Preserves usable results when individual objects fail.
-- [x] FRQ-06: For failures, preserve the concrete cause and available technical diagnostics rather than replacing them with generic messages.
-  - Origin: source, the user's explicit clarification about transparent errors in a local, personal tool.
+- [x] FRQ-06: For failures, preserve concrete causes and available technical diagnostics unchanged, without masking or filtering.
+  - Origin: source, the user's explicit decision to retain unfiltered error diagnostics in this local, personal tool.
   - Goal: Enable the caller to understand and resolve failures.
   - Goal achievement: Partial. Avoids additional investigation caused by concealed error details.
 
 ### Non-functional requirements
 
-- [x] NRQ-01: Return only data needed by the caller to evaluate the results: classification outcomes and their interpretation data, information associating outcomes with submitted objects, and failure diagnostics. Do not return source contents.
-  - Origin: formulated from the cost-reduction goal, then explicitly confirmed and refined by the user.
-  - Goal: Reduce the amount of source content processed by the main LLM.
-  - Goal achievement: Partial. Prevents delegated reading from moving file contents into the response.
+- [x] NRQ-01: Return classification outcomes, interpretation data, object associations, and failure diagnostics. Successful outputs exclude source contents. Failure diagnostics preserve any source contents or credentials echoed by the endpoint.
+  - Origin: formulated from the cost-reduction goal, then refined by the user's explicit exception for unfiltered error diagnostics.
+  - Goal: Reduce the amount of source content processed by the main LLM on successful classification.
+  - Goal achievement: Partial. Keeps source contents out of successful results while preserving complete failure diagnostics.
 
 ## Open questions
 

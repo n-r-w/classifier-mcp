@@ -1,0 +1,51 @@
+# Classifier MCP
+
+A stdio MCP server that classifies inline text through a System One HTTP endpoint. Successful results contain assessments without source contents. Error diagnostics preserve upstream bodies and causes unchanged.
+
+## Startup
+
+Set these environment variables in the MCP client's server configuration or in the process environment:
+
+- `SYSTEM_ONE_ENDPOINT`: required full HTTP(S) endpoint URL. No default. OpenRouter uses `https://openrouter.ai/api/v1/systemone`.
+- `SYSTEM_ONE_MODEL`: required model identifier, passed unchanged to the endpoint. No default.
+- `SYSTEM_ONE_HTTP_TIMEOUT`: positive duration for one complete HTTP request; default `60s`. Examples: `30s`, `2m`, `250ms`.
+- `SYSTEM_ONE_API_KEY`: optional bearer credential. OpenRouter requires it; unauthenticated compatible endpoints can omit it.
+
+See [.env.example](.env.example). Endpoint URLs can include a query. Keep credentials in `SYSTEM_ONE_API_KEY`; endpoint user information and fragments are rejected. Missing endpoint or model settings stop startup with exit code 1.
+
+Run `task build`, then configure the MCP client to launch `bin/classifier-mcp` (`bin/classifier-mcp.exe` on Windows). The executable inherits its environment; it does not read `.env`.
+
+The server uses stdout for MCP and stderr for logs. Interrupt or terminate the process to stop it. HTTP requests use `SYSTEM_ONE_HTTP_TIMEOUT`, which defaults to 60 seconds. Requests run sequentially within each tool call and are sent once; upstream overload responses are returned without retries.
+
+## `classify`
+
+Supply a non-empty `objects` list, a non-blank `task`, and a non-empty `questions` map. Object IDs must be non-empty and unique within the call. Each object has a `source` with `type: "text"` and a required string `text`; an empty text is allowed. Only inline text is implemented. Local file sources are not accepted.
+
+Each question has a non-empty ID, a `type`, and `instructions`. Instructions can be a non-blank string, an object, or an array. Numbers in structured instructions and criteria are passed unchanged, including identifiers larger than 2^53. Full Score legends preserve the caller's descriptions and numeric precision. Question types are:
+
+- `choice`: requires a non-empty category-to-description `criteria` object. Descriptions can be strings, objects, arrays, or null. Compact results contain `type`, `choice`, `probability`, and optional provider `confidence`.
+- `noul`: returns the probability that a condition holds as `type` and `noul`. Optional `criteria` must contain exactly `true` and `false`, with string, object, or array descriptions.
+- `score`: requires a non-empty ordered `criteria` array of string, object, or array descriptions. Compact results contain `type`, a probability-weighted `score` from 0 through the last level index, and optional provider `confidence`.
+
+`result_mode` is `compact` by default, or `full`. Full Choice adds `probabilities`. Full Score adds `probabilities` and `legend`, keyed by decimal level indices. Noul has the same shape in both modes. Optional fields must be omitted rather than supplied as null, except null Choice descriptions. Defined input objects reject unknown fields; guidance objects keep arbitrary keys.
+
+Example arguments:
+
+```json
+{
+  "objects": [{"id": "ticket", "source": {"type": "text", "text": "Checkout fails after Pay."}}],
+  "task": "Assess support tickets.",
+  "questions": {
+    "team": {"type": "choice", "instructions": "Which team owns this?", "criteria": {"payments": "Billing", "other": null}},
+    "defect": {"type": "noul", "instructions": "Does this report broken behavior?"},
+    "urgency": {"type": "score", "instructions": "How urgent is this?", "criteria": ["Can wait", "Fix soon", "Blocking"]}
+  },
+  "result_mode": "compact"
+}
+```
+
+Results contain one entry per object in input order. Success entries contain `id`, `status: "ok"`, the actual response `model`, and complete `answers`. Optional `usage` contains only reported `input_tokens`, `output_tokens`, and `cost`; OpenRouter reports cost in credits. Missing or null usage and confidence values are omitted; reported zero values are retained.
+
+Invalid shared arguments return a text-only tool error before HTTP work. A provider failure or incompatible answer returns an atomic object entry with `status: "error"` and a diagnostic containing `code`, `operation`, and `message`, plus available HTTP details. No partial answer set is returned. Error diagnostics preserve complete upstream bodies and causes unchanged, including ordinary text, malformed JSON, and any echoed source contents or credentials.
+
+Valid calls return the same `results` object in MCP `structuredContent` and one JSON text block. `isError` is true only when every object fails; partial success has `isError: false`. Unknown tools are protocol errors. The tool publishes input and output JSON schemas through `tools/list`.

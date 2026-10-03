@@ -4,7 +4,7 @@
 
 The agreed problem is recorded in [problem.md](problem.md). The approved requirements are recorded in [prd.md](prd.md).
 
-The tool delegates reading and classification to the MCP server so that the main LLM can use classification outcomes without processing the source contents itself. Direct text input remains available.
+The tool delegates reading and classification to the MCP server so that the main LLM can use successful classification outcomes without processing the source contents itself. Direct text input remains available.
 
 ## Proposed solution
 
@@ -14,7 +14,9 @@ Expose exactly one tool, `classify`, through the existing stdio transport and th
 
 A call supplies a list of objects, a task, and a common set of classification questions. Each object has a distinct identity within the call. The response preserves the association between each object and its outcome, including repeated references to different parts of the same file.
 
-Use typed input and output models at the MCP boundary. Keep the SDK's structured result and its text representation for compatibility. The SDK can serialize the same result in both representations; this does not establish that a client sends both copies to its LLM. Verify result rendering in the actual MCP client during integration rather than removing structured output based on an assumed token cost.
+Use private typed input and output models at the MCP boundary. Register the raw SDK tool handler so that request guidance and result legends are not normalized through floating-point values. Validate separate decoded copies against the published schemas; never forward those validation copies. Decode structured guidance with number-preserving JSON handling.
+
+Serialize the typed result once and populate the MCP structured result and its text representation from that same JSON. Keeping both representations does not establish that a client sends both copies to its LLM. Verify result rendering in the actual MCP client during integration rather than removing structured output based on an assumed token cost.
 
 A single list-based tool avoids requiring a separate main-LLM tool call for every object or assessment type.
 
@@ -82,13 +84,13 @@ Return the actual model reported by the provider and provider-reported usage inf
 
 The server does not choose decision thresholds, turn Noul probabilities into categorical booleans, invent categories, or generate explanations. These decisions remain with the caller.
 
-Return classification data, object associations, and failure diagnostics, not source contents. Do not attach the classified code or file contents as MCP resources or include them as explanatory text.
+Successful results contain classification data and object associations without source contents. Failure diagnostics retain complete upstream bodies and causes unchanged, including any echoed source contents or credentials. Do not attach the classified code or file contents as MCP resources or add them as explanatory text.
 
 Covers FRQ-04, FRQ-05, and NRQ-01.
 
 ### Errors and model limits
 
-Preserve successful outcomes when another object fails. An object-level error identifies the affected object, the failed operation, the concrete cause, and available technical diagnostics. For upstream failures, preserve the HTTP status and diagnostic information returned by the endpoint rather than replacing them with a generic message.
+Preserve successful outcomes when another object fails. An object-level error identifies the affected object, the failed operation, the concrete cause, and available technical diagnostics. For upstream failures, preserve the HTTP status, complete response body, and concrete cause returned by the endpoint. Diagnostic bodies remain unchanged whether they contain JSON, ordinary text, or malformed JSON.
 
 Malformed overall requests and invalid shared classification definitions fail before model requests are made. Failures attributable to an individual source remain individual outcomes.
 
@@ -142,7 +144,7 @@ This supplement specifies the proposed external contract for review. It does not
 
 ### Tool inventory
 
-- `classify`: evaluates a list of inline texts, local files, or local file fragments against a common task and a common set of questions. Returns one outcome per object without returning source contents.
+- `classify`: evaluates a list of inline texts, local files, or local file fragments against a common task and a common set of questions. Returns one outcome per object. Successful outcomes exclude source contents; failure diagnostics remain unfiltered.
 - There are no separate tools for reading files, selecting categories, checking conditions, or scoring content. Reading a referenced source is part of `classify`.
 - The server publishes `classify` through `tools/list` with an `inputSchema` and an `outputSchema`. The schemas describe the alternatives and fields below. They do not expose model, endpoint, credentials, concurrency, timeout, or retry controls as call arguments.
 
@@ -180,7 +182,7 @@ The source forms are exclusive: `text` does not accept `path` or `lines`; `file`
 Every question has required `type` and `instructions` fields:
 
 - `type`: exactly one of `choice`, `noul`, and `score`.
-- `instructions`: a string, JSON object, or JSON array describing the independent question and its context. A string containing only whitespace is invalid. Structured guidance is passed through as System One guidance, not interpreted as another source reference.
+- `instructions`: a string, JSON object, or JSON array describing the independent question and its context. A string containing only whitespace is invalid. Structured guidance is passed through as System One guidance without changing numeric values, including identifiers larger than 2^53. It is not interpreted as another source reference.
 
 Question IDs associate answers with definitions. IDs are not classification criteria and do not replace instructions. Questions cannot refer to another question's answer.
 
@@ -298,7 +300,7 @@ The diagnostic object contains:
 - `operation`: required string, either `read_source` or `classify`.
 - `message`: required string identifying the concrete cause. For example, a range error states the requested boundaries and the file's available line count.
 - `http_status`: optional integer containing the upstream HTTP status when a response was received.
-- `upstream_body`: optional string retaining the endpoint's error body or the incompatible response portion needed to diagnose a decoding or validation error.
+- `upstream_body`: optional string retaining the complete endpoint response body unchanged, including JSON, ordinary text, or malformed JSON.
 - `upstream_request_id`: optional string containing an available upstream request identifier.
 - `attempts`: optional positive integer counting HTTP attempts, including the first attempt. Present for errors after an HTTP attempt, including errors after exhausted retries; absent for source failures or cancellation before an attempt.
 - `retry_after_seconds`: optional non-negative number containing the final supplied retry delay converted to seconds. A supplied zero remains zero.
@@ -312,7 +314,7 @@ The error codes and operations are:
 - `invalid_response`, `classify`: the response cannot be decoded into the required System One answers or lacks data required by the selected result mode.
 - `canceled`, either operation: the call's cancellation is observed during that operation. Cancellation before model capacity is acquired uses `classify`.
 
-Diagnostics retain technical causes rather than replacing them with a generic error. Credentials and echoed source contents are excluded from diagnostics and logs. When an upstream body contains either, remove those portions while retaining its status, error code, message, and other diagnostic fields. Error responses do not attach source resources.
+Diagnostics preserve concrete causes, request identifiers, and complete upstream bodies unchanged. Echoed source contents, credentials, and all diagnostic fields remain in the response. JSON formatting is preserved, and non-JSON bodies are retained. Error responses do not attach source resources.
 
 Each object is atomic: an incomplete answer set produces an error for that object, not a partly populated success entry. Failures of other objects do not remove successful entries. When an upstream response supplies usage even though the object fails, the error entry may also contain `usage` with the same fields and omission rules as a successful entry.
 
@@ -321,12 +323,12 @@ Each object is atomic: an incomplete answer set produces an error for that objec
 The server distinguishes three boundaries:
 
 - Protocol failure: an unknown tool or a malformed MCP `tools/call` message produces a JSON-RPC error rather than a classification result. For example, an unknown tool name is not an object error.
-- Invalid overall arguments: missing required fields, incompatible JSON types, conflicting source forms, unknown defined fields, duplicate object IDs, or invalid common task or question definitions reject the whole call before file reads or model requests. The result has `isError: true` and a text diagnostic naming the offending argument and cause. It has no `results` or `structuredContent`. SDK input-schema failures follow this text-error path.
+- Invalid overall arguments: missing required fields, incompatible JSON types, conflicting source forms, unknown defined fields, duplicate object IDs, or invalid common task or question definitions reject the whole call before file reads or model requests. The result has `isError: true` and a text diagnostic naming the offending argument and cause. It has no `results` or `structuredContent`. Server input-schema failures follow this text-error path.
 - Valid overall arguments: file path and line-boundary semantics, content acquisition, and model execution are evaluated per object. The server returns `structuredContent` containing `results`. The MCP `content` array contains one text block serializing that same object for compatibility.
 
 For a completed list response, `isError` is false when at least one object succeeds. It is true when all objects fail. Partial success is therefore not a whole-call error: the caller inspects each entry's `status`. An omitted MCP `isError` means false under the MCP protocol.
 
-The `outputSchema` describes the structured `results` object and its success/error and assessment alternatives. An all-failed list still conforms to this schema. Request errors have no structured output to validate. The SDK serializes typed output into both `structuredContent` and a text block when the handler has not supplied separate content.
+The `outputSchema` describes the structured `results` object and its success/error and assessment alternatives. An all-failed list still conforms to this schema. Request errors have no structured output to validate. The server validates a separate result copy and uses one serialization of the typed output for both `structuredContent` and the text block. The validation copy is not used as output, so numeric values in full Score legends retain their precision.
 
 MCP cancellation requests stop further work and cancel pending HTTP operations. A canceled client call is not guaranteed to receive a response. When the transport permits a final list response, preserve completed successes and return `canceled` entries for unfinished objects. An absent response after cancellation must not be interpreted as evidence that an upstream request did not run.
 
@@ -540,4 +542,4 @@ The attempt count is illustrative, not a selected retry limit. In contrast, a ca
 - [OpenRouter usage accounting](https://openrouter.ai/docs/guides/guides/usage-accounting), including the provider's cost units.
 - [Jev limitations](https://docs.typesafe.ai/model-jaggedness/jev-1.13), including irrelevant context and structural invariants.
 - [MCP structured results and output schemas](https://modelcontextprotocol.io/specification/2025-11-25/server/tools).
-- `github.com/modelcontextprotocol/go-sdk` v1.8.0, `mcp/server.go`, `toolForErr`: source of typed result serialization behavior.
+- `github.com/modelcontextprotocol/go-sdk` v1.8.0, `mcp/server.go`, `Server.AddTool`, and `mcp/protocol.go`, `CallToolResult`: raw tool registration and MCP envelope transport.

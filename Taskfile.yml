@@ -57,7 +57,7 @@ tasks:
   build:
     desc: "Build the project"
     cmds:
-      - go build -o bin/classifier-mcp ./cmd/classifier-mcp
+      - go build -o bin/ ./cmd/classifier-mcp
 
   test-coverage:
     desc: Run tests with coverage
