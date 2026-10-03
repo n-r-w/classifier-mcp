@@ -13,6 +13,7 @@ MCP server providing the ability to classify files based on specified criteria.
 ## Instructions
 1. DON'T edit AGENTS.md and ifaceguard.cfg without DIRECT user request.
 2. Maintain consistency of environment variables between `.env.example`, `.env`, Taskfile.yml, scripts, code, and documentation.
+3. Use English for documentation and code comments.
 
 ## Coding rules
 1. All interfaces MUST be prefixed with uppercase `I` letter
