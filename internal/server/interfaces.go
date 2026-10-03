@@ -37,24 +37,18 @@ type Object struct {
 // Outcome is exactly one success or failure entry in the completed list.
 type Outcome = mo.Either[Success, Failure]
 
-// Success contains the complete answer set.
+// Success contains the complete requested assessments for one object.
 type Success struct {
-	// Caller identity associating this result with its input object.
+	// ID is the caller's input identity.
 	ID string
-	// Actual endpoint-reported model identifier rather than the configured alias.
-	Model string
-	// Complete validated set keyed by exactly the requested question IDs.
+	// Answers contains the validated assessment set without unused provider metadata.
 	Answers map[string]domain.Assessment
-	// None when the endpoint reports no billing values; reported zeros stay present.
-	Usage mo.Option[domain.Usage]
 }
 
-// Failure contains an object diagnostic and any reported usage.
+// Failure contains one concrete text cause while the batch continues independently.
 type Failure struct {
-	// Caller identity associating this atomic error with its input object.
+	// ID is the caller's input identity.
 	ID string
-	// Unfiltered cause and available endpoint metadata for the failed operation.
-	Diagnostic domain.Diagnostic
-	// Optional billing values from the failed request; missing values are not estimated.
-	Usage mo.Option[domain.Usage]
+	// Error is the source, transport, provider, answer, or cancellation cause.
+	Error string
 }

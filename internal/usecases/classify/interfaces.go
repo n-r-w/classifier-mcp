@@ -12,14 +12,14 @@ import (
 
 // IModel evaluates all questions for one text.
 type IModel interface {
-	// Evaluate returns None for the diagnostic only for a complete compatible answer set.
-	Evaluate(context.Context, Request) (Response, mo.Option[domain.Diagnostic])
+	// Evaluate returns a complete compatible answer set or its concrete failure cause.
+	Evaluate(context.Context, Request) (Response, error)
 }
 
 // ISourceReader acquires local text and its resolved location.
 type ISourceReader interface {
-	// Read returns exact content and resolved metadata, or a concrete source diagnostic.
-	Read(context.Context, domain.FileSource) (AcquiredSource, mo.Option[domain.Diagnostic])
+	// Read returns exact content and resolved metadata, or a concrete source error.
+	Read(context.Context, domain.FileSource) (AcquiredSource, error)
 }
 
 // AcquiredSource pairs content with its resolved file reference.
@@ -44,12 +44,8 @@ type Request struct {
 	Full bool
 }
 
-// Response carries provider data; on failure, only reported usage may be retained.
+// Response carries the complete provider assessment set.
 type Response struct {
-	// Endpoint identity used only when the diagnostic is None.
-	Model string
-	// Complete compatible answer set on success; never consumed on failure.
+	// Answers contains all compatible assessments on success; unused on failure.
 	Answers map[string]domain.Assessment
-	// Optional provider billing values, including any retained on a failed evaluation.
-	Usage mo.Option[domain.Usage]
 }

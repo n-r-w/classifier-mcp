@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-// TestOverloadRetries checks selective retries through the MCP entry point and retains final attempt diagnostics.
+// TestOverloadRetries checks actual attempts and the final concise cause through MCP.
 func (s *classificationSuite) TestOverloadRetries() {
 	for _, status := range []int{http.StatusTooManyRequests, 529} {
 		s.Run(fmt.Sprint(status), func() {
@@ -21,15 +21,10 @@ func (s *classificationSuite) TestOverloadRetries() {
 				s.NoError(err)
 			}, time.Minute)
 			result := s.call(session, validArguments)
-			s.True(result.IsError)
-			diagnostic := s.structured(result)["results"].([]any)[0].(map[string]any)["error"].(map[string]any)
+			s.Require().False(result.IsError)
+			cause := s.structured(result)["results"].([]any)[0].(map[string]any)["error"]
 			s.Equal(int32(3), attempts.Load())
-			s.InDelta(3, diagnostic["attempts"], 0)
-			s.InDelta(status, diagnostic["http_status"], 0)
-			s.Equal("overloaded attempt 3\n", diagnostic["upstream_body"])
-			s.Contains(diagnostic["message"], "overloaded attempt 3\n")
-			s.Equal("attempt-3", diagnostic["upstream_request_id"])
-			s.InDelta(0, diagnostic["retry_after_seconds"], 0)
+			s.Equal("overloaded attempt 3\n", cause)
 		})
 	}
 }
@@ -51,5 +46,5 @@ func (s *classificationSuite) TestOverloadThenSuccess() {
 	result := s.call(session, validArguments)
 	s.False(result.IsError)
 	s.Equal(int32(2), attempts.Load())
-	s.Equal("ok", s.structured(result)["results"].([]any)[0].(map[string]any)["status"])
+	s.Contains(s.structured(result)["results"].([]any)[0].(map[string]any), "answers")
 }

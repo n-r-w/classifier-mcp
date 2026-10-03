@@ -1,6 +1,6 @@
 # Classifier MCP
 
-A stdio MCP server that classifies inline text, local text files, and caller-selected file fragments through a System One HTTP endpoint. Successful results contain assessments without source contents. Error diagnostics preserve upstream bodies and causes unchanged.
+A stdio MCP server that classifies inline text, local text files, and caller-selected file fragments through a System One HTTP endpoint. Successful results contain assessments without source contents. Each failed object has a concise text cause.
 
 ## Startup
 
@@ -24,6 +24,57 @@ Objects run in parallel, with one shared process-wide HTTP request bound. Defaul
 
 `SYSTEM_ONE_HTTP_TIMEOUT` applies separately to each complete HTTP attempt. Capacity and retry waits observe call cancellation. A large supplied retry delay can keep a call waiting until it is canceled. Network failures, ambiguous timeouts, unrelated HTTP statuses, and incompatible model answers are returned without automatic retries.
 
+## Connect to an agent
+
+### Claude Code
+
+Build the executable as described above. Replace `/absolute/path/to/classifier-mcp/bin/classifier-mcp` with its absolute path and `YOUR_OPENROUTER_API_KEY` with your OpenRouter key.
+
+From a Bash or Zsh terminal, register the server for all your Claude Code projects:
+
+```sh
+claude mcp add --transport stdio --scope user classifier-mcp \
+  --env SYSTEM_ONE_ENDPOINT=https://openrouter.ai/api/v1/systemone \
+  --env 'SYSTEM_ONE_MODEL=~typesafe/jev-latest' \
+  --env SYSTEM_ONE_API_KEY=YOUR_OPENROUTER_API_KEY \
+  -- /absolute/path/to/classifier-mcp/bin/classifier-mcp
+```
+
+Alternatively, add this entry to `mcpServers` in your project's `.mcp.json`. This JSON configuration also works on Windows; use an executable path such as `"C:\\tools\\classifier-mcp.exe"` with JSON-escaped backslashes. Replace the executable path and key before starting Claude Code.
+
+```json
+{
+  "mcpServers": {
+    "classifier-mcp": {
+      "type": "stdio",
+      "command": "/absolute/path/to/classifier-mcp/bin/classifier-mcp",
+      "args": [],
+      "env": {
+        "SYSTEM_ONE_ENDPOINT": "https://openrouter.ai/api/v1/systemone",
+        "SYSTEM_ONE_MODEL": "~typesafe/jev-latest",
+        "SYSTEM_ONE_API_KEY": "YOUR_OPENROUTER_API_KEY"
+      }
+    }
+  }
+}
+```
+
+Start a new Claude Code session. For a project `.mcp.json`, approve the server when prompted. Run `/mcp` and check that `classifier-mcp` is connected and exposes `classify`. You can also check the connection from a terminal:
+
+```sh
+claude mcp get classifier-mcp
+```
+
+For example, ask Claude: "Use classifier-mcp's classify tool to assess `/absolute/path/to/tickets.txt` for defect reports and urgency. Pass the file reference rather than reading its contents first."
+
+Use absolute file paths in agent requests when the server's working directory is uncertain. Optional execution controls are listed in [Startup](#startup).
+
+See the [Claude Code MCP documentation](https://code.claude.com/docs/en/mcp) for configuration scopes and server management.
+
+### Other MCP agents
+
+Configure a local stdio server with the executable's absolute path as its command, an empty argument list, and the same `SYSTEM_ONE_*` environment settings. The agent starts the process and communicates over stdin/stdout. `SYSTEM_ONE_ENDPOINT` is the classifier's HTTP endpoint; it is not an HTTP MCP server address. Use the agent's MCP connection panel to verify that the `classify` tool is available.
+
 ## `classify`
 
 Supply a non-empty `objects` list, a non-blank `task`, and a non-empty `questions` map. Object IDs must be non-empty and unique within the call. Each object has exactly one source form:
@@ -38,13 +89,13 @@ Both range boundaries are required integers, starting at 1 and inclusive. Every 
 
 The server reports unreadable files, invalid UTF-8, blank paths, and numerical range failures per object. It does not shorten ranges, cache content, parse code, retrieve URLs, or extract binary documents. Text sources reject `path` and `lines`; file sources reject `text`.
 
-Each question has a non-empty ID, a `type`, and `instructions`. Instructions can be a non-blank string, an object, or an array. Numbers in structured instructions and criteria are passed unchanged, including identifiers larger than 2^53. Full Score legends preserve the caller's descriptions and numeric precision. Question types are:
+Each question has a non-empty ID, a `type`, and `instructions`. Instructions can be a non-blank string, an object, or an array. Numbers in structured instructions and criteria are passed unchanged, including identifiers larger than 2^53. Question types are:
 
-- `choice`: requires a non-empty category-to-description `criteria` object. Descriptions can be strings, objects, arrays, or null. Compact results contain `type`, `choice`, `probability`, and optional provider `confidence`.
-- `noul`: returns the probability that a condition holds as `type` and `noul`. Optional `criteria` must contain exactly `true` and `false`, with string, object, or array descriptions.
-- `score`: requires a non-empty ordered `criteria` array of string, object, or array descriptions. Compact results contain `type`, a probability-weighted `score` from 0 through the last level index, and optional provider `confidence`.
+- `choice`: requires a non-empty category-to-description `criteria` object. Descriptions can be strings, objects, arrays, or null. Compact results contain `choice`, `probability`, and optional provider `confidence`.
+- `noul`: returns the probability that a condition holds as `noul`. Optional `criteria` must contain exactly `true` and `false`, with string, object, or array descriptions.
+- `score`: requires a non-empty ordered `criteria` array of string, object, or array descriptions. Compact results contain a provider-reported `score` from 0 through the last level index, and optional provider `confidence`.
 
-`result_mode` is `compact` by default, or `full`. Full Choice adds `probabilities`. Full Score adds `probabilities` and `legend`, keyed by decimal level indices. Noul has the same shape in both modes. Optional fields must be omitted rather than supplied as null, except null Choice descriptions. Defined input objects reject unknown fields; guidance objects keep arbitrary keys.
+`result_mode` is `compact` by default, or `full`. Full Choice adds `probabilities`. Full Score adds `probabilities`, keyed by decimal level indices. The caller retains the submitted scale descriptions. Noul has the same shape in both modes. Optional fields must be omitted rather than supplied as null, except null Choice descriptions. Defined input objects reject unknown fields; guidance objects keep arbitrary keys.
 
 Example arguments:
 
@@ -65,12 +116,12 @@ Example arguments:
 }
 ```
 
-Results contain one entry per object in input order. Success entries contain `id`, `status: "ok"`, the actual response `model`, and complete `answers`. Optional `usage` contains only reported `input_tokens`, `output_tokens`, and `cost`; OpenRouter reports cost in credits. Missing or null usage and confidence values are omitted; reported zero values are retained.
+Results contain one entry per object in input order. A success contains exactly `id` and `answers`. An item failure contains exactly `id` and an `error` string with its concrete cause. The server returns the provider's values and optional confidence. Reported zero confidence remains present; missing or null confidence is omitted.
 
-Invalid shared arguments, conflicting source forms, and unknown defined fields return a text-only tool error before file reads or HTTP work. A source failure, provider failure, or incompatible answer returns an atomic object entry with `status: "error"` and a diagnostic containing `code`, `operation`, and `message`, plus available HTTP details. Source diagnostics use `operation: "read_source"` and `code: "invalid_source"`, `"source_read_failed"`, or `"canceled"`; they omit HTTP attempt metadata. Range failures identify the requested boundaries and, when the file was read, its available line count. Other objects keep their successful results. No partial answer set is returned. Error diagnostics preserve complete upstream bodies and causes unchanged, including ordinary text, malformed JSON, and any echoed source contents or credentials.
+The server checks result types, required fields, numeric ranges, question IDs, selected categories, and distribution keys. The provider owns statistical calculations. For example, a reported Score of `1.97`, confidence `0.96`, and probabilities `{"0": 0, "1": 0.02, "2": 0.98}` are returned as supplied. Provider model, usage, and legend metadata are unused.
 
-Model diagnostics include the actual `attempts` count after HTTP work. Exhausted overload retries retain the final HTTP status, complete body, cause, request identifier, and supplied `retry_after_seconds`, including zero. Cancellation before an HTTP attempt omits `attempts`.
+Invalid shared arguments, conflicting source forms, and unknown defined fields return a text-only tool error before file reads or HTTP work. Per-object source, network, provider, decoding, and cancellation failures remain independent results. For an HTTP error, the item contains the provider's actual message. The server adds no masking, JSON metadata envelope, or source resources.
 
-MCP cancellation stops capacity waits, retry waits, and pending HTTP operations. A canceled client call may receive no response. When a final list response is available, completed successes remain and unfinished objects receive `canceled` outcomes in input order.
+MCP cancellation stops capacity waits, retry waits, and pending HTTP operations. A canceled client call may receive no response. When a final list response is available, the server preserves completed assessments and concrete cancellation causes for unfinished objects in input order.
 
-Valid calls return the same `results` object in MCP `structuredContent` and one JSON text block. `isError` is true only when every object fails; partial success has `isError: false`. Unknown tools are protocol errors. The tool publishes input and output JSON schemas through `tools/list`.
+Every processable batch returns the same `results` object in MCP `structuredContent` and one JSON text block, with `isError: false`. This includes batches where every object fails. Whole-call validation errors remain tool errors; unknown tools remain protocol errors. The tool publishes input and output schemas through `tools/list`.

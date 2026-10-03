@@ -9,8 +9,6 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
-
-	"github.com/n-r-w/classifier-mcp/internal/domain"
 )
 
 // TestExhaustedAttemptsKeepFinalDelay retains the final response and stops before waiting its supplied delay.
@@ -29,12 +27,8 @@ func (s *executionSuite) TestExhaustedAttemptsKeepFinalDelay() {
 			"http://fixture/systemone", "configured", "", 1, 2, time.Second)
 		start := time.Now()
 		_, failure := client.Evaluate(t.Context(), newModelRequest())
-		diagnostic := failure.OrEmpty()
-		require.Equal(t, "upstream_error", diagnostic.Code)
-		require.Equal(t, 2, diagnostic.Attempts.OrEmpty())
-		require.Equal(t, 529, diagnostic.HTTPStatus.OrEmpty())
-		require.Equal(t, "final overload", diagnostic.UpstreamBody.OrEmpty())
-		require.InDelta(t, 7, diagnostic.RetryAfterSeconds.OrEmpty(), 0)
+		diagnostic := failure
+		require.Equal(t, "final overload", diagnostic.Error())
 		require.Zero(t, time.Since(start))
 	})
 }
@@ -54,17 +48,15 @@ func (s *executionSuite) TestRetryWaitReleasesCapacity() {
 		client := New(&http.Client{Transport: transport, CheckRedirect: nil, Jar: nil, Timeout: time.Minute},
 			"http://fixture/systemone", "configured", "", 1, 2, time.Second)
 		ctx, cancel := context.WithCancel(t.Context())
-		done := make(chan domain.Diagnostic, 1)
-		go func() { _, failure := client.Evaluate(ctx, newModelRequest()); done <- failure.OrEmpty() }()
+		done := make(chan error, 1)
+		go func() { _, failure := client.Evaluate(ctx, newModelRequest()); done <- failure }()
 		synctest.Wait()
 		start := time.Now()
 		_, second := client.Evaluate(t.Context(), newModelRequest())
-		require.True(t, second.IsNone())
+		require.NoError(t, second)
 		require.Zero(t, time.Since(start))
 		cancel()
 		first := <-done
-		require.Equal(t, "canceled", first.Code)
-		require.Equal(t, 1, first.Attempts.OrEmpty())
-		require.Equal(t, "waiting overload", first.UpstreamBody.OrEmpty())
+		require.Contains(t, first.Error(), "waiting overload")
 	})
 }

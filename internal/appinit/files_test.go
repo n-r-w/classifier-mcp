@@ -83,18 +83,15 @@ func (s *classificationSuite) TestLocalSources() {
 	}, acquired)
 	for i := 3; i < 8; i++ {
 		entry := entries[i].(map[string]any)
-		s.Equal("error", entry["status"])
-		diagnostic := entry["error"].(map[string]any)
-		s.Equal("read_source", diagnostic["operation"])
-		s.NotContains(diagnostic, "attempts")
+		s.Require().Len(entry, 2)
+		cause, ok := entry["error"].(string)
+		s.Require().True(ok)
+		s.NotEmpty(cause)
 		if i == 3 {
-			s.Equal("source_read_failed", diagnostic["code"])
-			s.Contains(diagnostic["message"], "missing")
-		} else {
-			s.Equal("invalid_source", diagnostic["code"])
+			s.Contains(cause, "missing")
 		}
 	}
-	s.Contains(entries[4].(map[string]any)["error"].(map[string]any)["message"], "3 lines")
+	s.Contains(entries[4].(map[string]any)["error"], "3 lines")
 }
 
 // TestFileShapesRejectWholeCall checks that a malformed source prevents even preceding HTTP work.
@@ -136,8 +133,6 @@ func (s *classificationSuite) TestLargeLineBoundsRemainObjectErrors() {
 	output := s.structured(result)
 	entries := output["results"].([]any)
 	s.Require().Len(entries, 2)
-	diagnostic := entries[0].(map[string]any)["error"].(map[string]any)
-	s.Equal("invalid_source", diagnostic["code"])
-	s.Equal("read_source", diagnostic["operation"])
-	s.Equal("ok", entries[1].(map[string]any)["status"])
+	s.NotEmpty(entries[0].(map[string]any)["error"])
+	s.Contains(entries[1].(map[string]any), "answers")
 }

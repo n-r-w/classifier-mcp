@@ -14,7 +14,6 @@ import (
 	reflect "reflect"
 
 	domain "github.com/n-r-w/classifier-mcp/internal/domain"
-	mo "github.com/samber/mo"
 	gomock "go.uber.org/mock/gomock"
 )
 
@@ -43,11 +42,11 @@ func (m *MockIModel) EXPECT() *MockIModelMockRecorder {
 }
 
 // Evaluate mocks base method.
-func (m *MockIModel) Evaluate(arg0 context.Context, arg1 Request) (Response, mo.Option[domain.Diagnostic]) {
+func (m *MockIModel) Evaluate(arg0 context.Context, arg1 Request) (Response, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Evaluate", arg0, arg1)
 	ret0, _ := ret[0].(Response)
-	ret1, _ := ret[1].(mo.Option[domain.Diagnostic])
+	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
@@ -82,11 +81,11 @@ func (m *MockISourceReader) EXPECT() *MockISourceReaderMockRecorder {
 }
 
 // Read mocks base method.
-func (m *MockISourceReader) Read(arg0 context.Context, arg1 domain.FileSource) (AcquiredSource, mo.Option[domain.Diagnostic]) {
+func (m *MockISourceReader) Read(arg0 context.Context, arg1 domain.FileSource) (AcquiredSource, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Read", arg0, arg1)
 	ret0, _ := ret[0].(AcquiredSource)
-	ret1, _ := ret[1].(mo.Option[domain.Diagnostic])
+	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 

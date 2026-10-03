@@ -1,65 +1,70 @@
 package appinit
 
 import (
-	"fmt"
 	"net/http"
 	"time"
 )
 
-// TestDiagnosticBodiesArePreserved keeps text, JSON, and malformed JSON exactly as returned by the endpoint.
-func (s *classificationSuite) TestDiagnosticBodiesArePreserved() {
+// TestProviderCausesAreConcise preserves the actual message and omits the service metadata envelope.
+func (s *classificationSuite) TestProviderCausesAreConcise() {
 	cases := []struct {
-		// name labels the response format under test.
+		// name distinguishes the provider's error representation.
 		name string
-		// body is the exact fixture response text expected in diagnostics.
+		// body is the external error payload, including unused metadata.
 		body string
-		// requestID is the provider trace identity supplied by a header or body metadata.
-		requestID string
+		// cause is the complete actual text message expected for this object.
+		cause string
 	}{
 		{
-			name:      "ordinary text",
-			body:      "Endpoint failure: private source; fixture credential secret-key.\n",
-			requestID: "header-private source-secret-key",
+			name:  "ordinary text",
+			body:  "private source failed; fixture credential secret-key.\n",
+			cause: "private source failed; fixture credential secret-key.\n",
 		},
-		{name: "full JSON", body: `{
-   "id":"provider-private source-secret-key",
-   "error":{"code":"upstream","message":"bad \u0073ecret-key and \u0070rivate source"},
-   "request":{"state":{"content":"private source","task":"Classify"}},
-   "headers":{"Authorization":"Bearer secret-key"},
-   "credentials":{"api_key":"secret-key"},
-   "source":"private source"
-  }`, requestID: "provider-private source-secret-key"},
 		{
-			name:      "malformed JSON",
-			body:      `{"error":"\u0073ecret-key \u0070rivate source"`,
-			requestID: "header-private source-secret-key",
+			name: "error object",
+			body: `{
+  "error": {
+    "message": "bad secret-key and private source",
+    "code": 502,
+    "metadata": {
+      "provider": "fixture"
+    }
+  },
+  "request": {
+    "content": "private source"
+  }
+}`,
+			cause: "bad secret-key and private source",
+		},
+		{name: "error string", body: `{
+  "error": "object rejected",
+  "provider": "fixture"
+}`, cause: "object rejected"},
+		{name: "message", body: `{
+  "message": "request rejected",
+  "provider": "fixture"
+}`, cause: "request rejected"},
+		{
+			name:  "nested cause with unused message object",
+			body:  `{"error":{"message":"quota exhausted","code":400},"message":{"unused":"metadata"}}`,
+			cause: "quota exhausted",
+		},
+		{
+			name:  "string cause with unused message object",
+			body:  `{"error":"quota exhausted","message":{"unused":"metadata"}}`,
+			cause: "quota exhausted",
 		},
 	}
 	for _, test := range cases {
 		s.Run(test.name, func() {
 			session := s.connect(func(w http.ResponseWriter, _ *http.Request) {
-				if test.name != "full JSON" {
-					w.Header().Set("X-Request-ID", test.requestID)
-				}
-				w.Header().Set("Retry-After", "0")
-				w.WriteHeader(http.StatusBadGateway)
+				w.WriteHeader(http.StatusBadRequest)
 				_, err := w.Write([]byte(test.body))
 				s.NoError(err)
 			}, time.Minute)
 			result := s.call(session, validArguments)
-			s.Require().True(result.IsError)
-			object := s.structured(result)["results"].([]any)[0].(map[string]any)
-			s.NotContains(object, "answers")
-			s.NotContains(object, "model")
-			diagnostic := object["error"].(map[string]any)
-			s.Equal("upstream_error", diagnostic["code"])
-			s.Equal("classify", diagnostic["operation"])
-			s.Equal(test.body, diagnostic["upstream_body"])
-			s.Equal(fmt.Sprintf("System One returned HTTP 502: %s", test.body), diagnostic["message"])
-			s.Equal(test.requestID, diagnostic["upstream_request_id"])
-			s.InDelta(http.StatusBadGateway, diagnostic["http_status"], 0)
-			s.InDelta(1, diagnostic["attempts"], 0)
-			s.InDelta(0, diagnostic["retry_after_seconds"], 0)
+			s.Require().False(result.IsError)
+			s.Equal(map[string]any{"id": "one", "error": test.cause}, s.structured(result)["results"].([]any)[0])
 		})
 	}
 }

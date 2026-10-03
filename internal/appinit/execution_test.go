@@ -108,8 +108,8 @@ func (s *classificationSuite) TestConcurrentCallsShareCapacityAndKeepOrder() {
 				prefix = "b"
 			}
 			s.Equal(fmt.Sprintf("%s%d", prefix, index), object["id"])
-			s.Equal(object["id"], object["model"])
-			s.Equal("ok", object["status"])
+			s.Contains(object, "answers")
+			s.False(result.IsError)
 		}
 	}
 	s.Equal(int32(2), peak.Load())

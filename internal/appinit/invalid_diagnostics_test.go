@@ -15,14 +15,12 @@ func (s *classificationSuite) TestNonFiniteRetryDelayKeepsObjectEnvelope() {
 		s.NoError(err)
 	}, time.Minute)
 	result := s.call(session, validArguments)
-	s.Require().True(result.IsError)
-	diagnostic := s.structured(result)["results"].([]any)[0].(map[string]any)["error"].(map[string]any)
-	s.Equal("upstream_error", diagnostic["code"])
-	s.NotContains(diagnostic, "retry_after_seconds")
+	s.Require().False(result.IsError)
+	s.Equal("overloaded", s.structured(result)["results"].([]any)[0].(map[string]any)["error"])
 }
 
-// TestZeroRetryDelayRetainsReportedMetadata checks the final supplied zero and actual overload attempts.
-func (s *classificationSuite) TestZeroRetryDelayRetainsReportedMetadata() {
+// TestZeroRetryDelayUsesConfiguredAttempts checks actual retries with a supplied immediate delay.
+func (s *classificationSuite) TestZeroRetryDelayUsesConfiguredAttempts() {
 	var calls atomic.Int64
 	session := s.connect(func(w http.ResponseWriter, _ *http.Request) {
 		calls.Add(1)
@@ -32,9 +30,7 @@ func (s *classificationSuite) TestZeroRetryDelayRetainsReportedMetadata() {
 		s.NoError(err)
 	}, time.Minute)
 	result := s.call(session, validArguments)
-	s.Require().True(result.IsError)
-	diagnostic := s.structured(result)["results"].([]any)[0].(map[string]any)["error"].(map[string]any)
-	s.InDelta(0, diagnostic["retry_after_seconds"], 0)
-	s.InDelta(3, diagnostic["attempts"], 0)
+	s.Require().False(result.IsError)
+	s.Equal("rate limit", s.structured(result)["results"].([]any)[0].(map[string]any)["error"])
 	s.Equal(int64(3), calls.Load())
 }

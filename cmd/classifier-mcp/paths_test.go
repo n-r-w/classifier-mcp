@@ -110,7 +110,7 @@ func (s *startupSuite) TestNativeSourceTraversal() {
 	for i, path := range paths {
 		entry := entries[i].(map[string]any)
 		s.Equal(path, entry["id"])
-		s.Equal("ok", entry["status"])
+		s.Contains(entry, "answers")
 		select {
 		case state := <-states:
 			s.Equal(string(expected), state["content"], path)

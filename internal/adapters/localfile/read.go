@@ -2,14 +2,13 @@ package localfile
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math/big"
 	"os"
 	"path/filepath"
 	"strings"
 	"unicode/utf8"
-
-	"github.com/samber/mo"
 
 	"github.com/n-r-w/classifier-mcp/internal/domain"
 	"github.com/n-r-w/classifier-mcp/internal/usecases/classify"
@@ -19,54 +18,51 @@ import (
 func (s *Service) Read(
 	ctx context.Context,
 	source domain.FileSource,
-) (classify.AcquiredSource, mo.Option[domain.Diagnostic]) {
+) (classify.AcquiredSource, error) {
 	if err := ctx.Err(); err != nil {
-		return failSource("canceled", err.Error())
+		return classify.AcquiredSource{}, err
 	}
 	if strings.TrimSpace(source.Path) == "" {
-		return failSource("invalid_source", "file path must not be blank")
+		return classify.AcquiredSource{}, errors.New("file path must not be blank")
 	}
 	if lines, present := source.Lines.Get(); present && (lines.Start.Sign() < 1 || lines.End.Cmp(lines.Start) < 0) {
-		return failSource(
-			"invalid_source",
-			fmt.Sprintf(
-				"requested lines %d through %d in %s; require 1 <= start <= end",
-				lines.Start,
-				lines.End,
-				source.Path,
-			),
+		return classify.AcquiredSource{}, fmt.Errorf(
+			"requested lines %d through %d in %s; require 1 <= start <= end",
+			lines.Start,
+			lines.End,
+			source.Path,
 		)
 	}
 	path, resolveErr := resolvePath(source.Path)
 	if resolveErr != nil {
-		return failSource("invalid_source", resolveErr.Error())
+		return classify.AcquiredSource{}, resolveErr
 	}
 	// The MCP schema requires an explicit file source; Read resolves its caller-selected local path.
 	data, err := os.ReadFile(path) //nolint:gosec // The file-source contract permits any caller-selected local path.
 	if canceled := ctx.Err(); canceled != nil {
-		return failSource("canceled", canceled.Error())
+		return classify.AcquiredSource{}, canceled
 	}
 	if err != nil {
-		return failSource("source_read_failed", err.Error())
+		return classify.AcquiredSource{}, err
 	}
 	if !utf8.Valid(data) {
-		return failSource("source_read_failed", fmt.Sprintf("read %s as text: invalid UTF-8", path))
+		return classify.AcquiredSource{}, fmt.Errorf("read %s as text: invalid UTF-8", path)
 	}
 	content := string(data)
 	if lines, present := source.Lines.Get(); present {
 		fragment, rangeErr := selectLines(content, lines, path)
 		if rangeErr != nil {
-			return failSource("invalid_source", rangeErr.Error())
+			return classify.AcquiredSource{}, rangeErr
 		}
 		content = fragment
 	}
 	if canceled := ctx.Err(); canceled != nil {
-		return failSource("canceled", canceled.Error())
+		return classify.AcquiredSource{}, canceled
 	}
 	return classify.AcquiredSource{
 		Content: content,
 		Source:  domain.FileSource{Path: path, Lines: source.Lines},
-	}, mo.None[domain.Diagnostic]()
+	}, nil
 }
 
 // resolvePath makes native relative references absolute while retaining filesystem traversal segments.
@@ -119,13 +115,4 @@ func selectLines(content string, lines domain.LineRange, path string) (string, e
 	start := int(lines.Start.Int64())
 	end := int(lines.End.Int64())
 	return strings.Join(parts[start-1:end], ""), nil
-}
-
-// failSource returns the concrete acquisition cause for one object.
-func failSource(code, message string) (classify.AcquiredSource, mo.Option[domain.Diagnostic]) {
-	return classify.AcquiredSource{}, mo.Some(domain.Diagnostic{
-		Code: code, Operation: "read_source", Message: message,
-		HTTPStatus: mo.None[int](), UpstreamBody: mo.None[string](), UpstreamRequestID: mo.None[string](),
-		Attempts: mo.None[int](), RetryAfterSeconds: mo.None[float64](),
-	})
 }

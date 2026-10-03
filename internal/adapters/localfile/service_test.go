@@ -66,10 +66,9 @@ func (s *sourceSuite) TestExactLines() {
 			}
 			acquired, diagnostic := New().Read(s.T().Context(), domain.FileSource{Path: path, Lines: lines})
 			if test.fails {
-				s.Require().True(diagnostic.IsSome())
-				s.Equal("invalid_source", diagnostic.MustGet().Code)
+				s.Require().Error(diagnostic)
 			} else {
-				s.Require().True(diagnostic.IsNone())
+				s.Require().NoError(diagnostic)
 				s.Equal(test.want, acquired.Content)
 				s.Equal(path, acquired.Source.Path)
 				s.Equal(lines, acquired.Source.Lines)
@@ -83,23 +82,18 @@ func (s *sourceSuite) TestReadFailuresAndCancellation() {
 	path := filepath.Join(s.T().TempDir(), "invalid")
 	s.Require().NoError(os.WriteFile(path, []byte{0xff}, 0o600))
 	_, diagnostic := New().Read(s.T().Context(), domain.FileSource{Path: path, Lines: mo.None[domain.LineRange]()})
-	s.Require().True(diagnostic.IsSome())
-	s.Equal("source_read_failed", diagnostic.MustGet().Code)
-	s.Contains(diagnostic.MustGet().Message, "invalid UTF-8")
-	s.Contains(diagnostic.MustGet().Message, path)
+	s.Require().Error(diagnostic)
+	s.Contains(diagnostic.Error(), "invalid UTF-8")
+	s.Contains(diagnostic.Error(), path)
 	_, directoryDiagnostic := New().Read(
 		s.T().Context(), domain.FileSource{Path: s.T().TempDir(), Lines: mo.None[domain.LineRange]()},
 	)
-	s.Require().True(directoryDiagnostic.IsSome())
-	s.Equal("source_read_failed", directoryDiagnostic.MustGet().Code)
+	s.Require().Error(directoryDiagnostic)
 	ctx, cancel := context.WithCancel(s.T().Context())
 	cancel()
 	_, canceled := New().Read(ctx, domain.FileSource{Path: path, Lines: mo.None[domain.LineRange]()})
-	s.Require().True(canceled.IsSome())
-	s.Equal("canceled", canceled.MustGet().Code)
-	s.Equal("read_source", canceled.MustGet().Operation)
-	s.Equal(context.Canceled.Error(), canceled.MustGet().Message)
-	s.True(canceled.MustGet().Attempts.IsNone())
+	s.Require().Error(canceled)
+	s.ErrorIs(canceled, context.Canceled)
 }
 
 // TestFreshReads checks that repeated references obtain the contents of each call.
@@ -112,7 +106,7 @@ func (s *sourceSuite) TestFreshReads() {
 			s.T().Context(),
 			domain.FileSource{Path: path, Lines: mo.None[domain.LineRange]()},
 		)
-		s.Require().True(diagnostic.IsNone())
+		s.Require().NoError(diagnostic)
 		s.Equal(text, acquired.Content)
 	}
 }
@@ -125,7 +119,7 @@ func (s *sourceSuite) TestAbsolutePathPreserved() {
 	separator := string(os.PathSeparator)
 	path := filepath.Join(directory, "child") + separator + ".." + separator + "text"
 	acquired, diagnostic := New().Read(s.T().Context(), domain.FileSource{Path: path, Lines: mo.None[domain.LineRange]()})
-	s.Require().True(diagnostic.IsNone())
+	s.Require().NoError(diagnostic)
 	s.Equal("content", acquired.Content)
 	s.Equal(path, acquired.Source.Path)
 }

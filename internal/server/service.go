@@ -92,27 +92,11 @@ func (s *Service) classify(ctx context.Context, request *mcp.CallToolRequest) (*
 	}
 	outcomes := s.classifier.Classify(ctx, command)
 	output := classifyOutput{Results: make([]any, 0, len(outcomes))}
-	// An all-failed list is a tool error; any success keeps the list usable.
-	result.IsError = true
 	for i := range outcomes {
 		if value, isSuccess := outcomes[i].Left(); isSuccess {
-			result.IsError = false
 			output.Results = append(output.Results, projectSuccess(value, command.Full))
 		} else if value, isFailure := outcomes[i].Right(); isFailure {
-			diagnostic := value.Diagnostic
-			output.Results = append(output.Results, errorOutput{
-				ID: value.ID, Status: statusError, Usage: projectUsage(value.Usage),
-				Error: diagnosticOutput{
-					Code:              diagnostic.Code,
-					Operation:         diagnostic.Operation,
-					Message:           diagnostic.Message,
-					HTTPStatus:        diagnostic.HTTPStatus,
-					UpstreamBody:      diagnostic.UpstreamBody,
-					UpstreamRequestID: diagnostic.UpstreamRequestID,
-					Attempts:          diagnostic.Attempts,
-					RetryAfterSeconds: diagnostic.RetryAfterSeconds,
-				},
-			})
+			output.Results = append(output.Results, errorOutput(value))
 		}
 	}
 	encoded, err := json.Marshal(output)

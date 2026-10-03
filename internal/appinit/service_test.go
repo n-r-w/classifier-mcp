@@ -166,7 +166,7 @@ func (s *classificationSuite) structured(result *mcp.CallToolResult) map[string]
 	s.JSONEq(string(data), text.Text)
 	for _, entry := range object["results"].([]any) {
 		outcome := entry.(map[string]any)
-		if outcome["status"] == "ok" {
+		if _, successful := outcome["answers"]; successful {
 			success, marshalErr := json.Marshal(outcome)
 			s.Require().NoError(marshalErr)
 			s.NotContains(string(success), "private source")
@@ -221,29 +221,21 @@ func (s *classificationSuite) TestAssessmentsAndSchemas() {
 			s.Require().Len(results, 1)
 			object := results[0].(map[string]any)
 			s.Equal("one", object["id"])
-			s.Equal("actual-model", object["model"])
-			s.Equal(
-				map[string]any{"input_tokens": float64(0), "output_tokens": float64(0), "cost": float64(0)},
-				object["usage"],
-			)
 			answers := object["answers"].(map[string]any)
 			team := answers["team"].(map[string]any)
 			score := answers["urgency"].(map[string]any)
 			s.InDelta(float64(0), team["confidence"], 0)
 			s.InDelta(0.5, team["probability"], 0)
-			s.Equal(map[string]any{"type": "noul", "noul": float64(0)}, answers["condition"])
+			s.Equal(map[string]any{"noul": float64(0)}, answers["condition"])
 			s.InDelta(1.6, score["score"], 0)
 			s.InDelta(float64(0), score["confidence"], 0)
 			if mode != "full" {
+				s.Len(team, 3)
+				s.Len(score, 2)
+			} else {
 				s.Len(team, 4)
 				s.Len(score, 3)
-			} else {
-				s.Len(team, 5)
-				s.Len(score, 5)
-				s.Equal(
-					map[string]any{"0": "low", "1": map[string]any{"level": "medium"}, "2": []any{"high"}},
-					score["legend"],
-				)
+
 			}
 		})
 	}
@@ -320,8 +312,8 @@ func (s *classificationSuite) TestArgumentsFailBeforeHTTP() {
 	s.Equal(int64(0), calls.Load())
 }
 
-// TestAtomicResponseErrorsAndUsageOmission checks atomic validation failures and absent-versus-zero provider fields.
-func (s *classificationSuite) TestAtomicResponseErrorsAndUsageOmission() {
+// TestAtomicResponseErrorsAndConfidenceOmission checks used response fields and optional confidence presence.
+func (s *classificationSuite) TestAtomicResponseErrorsAndConfidenceOmission() {
 	cases := []struct {
 		// name identifies the response failure exercised by the subtest.
 		name string
@@ -329,28 +321,24 @@ func (s *classificationSuite) TestAtomicResponseErrorsAndUsageOmission() {
 		body string
 		// status supplies the HTTP response status independently of body validation.
 		status int
-		// code is the object-level failure category expected after the call.
-		code string
 	}{
 		{name: "missing answer", body: `{
   "model": "actual",
   "answers": {}
-}`, status: 200, code: "invalid_response"},
-		{name: "malformed", body: `not JSON private source secret-key`, status: 200, code: "invalid_response"},
+}`, status: 200},
+		{name: "malformed", body: `not JSON private source secret-key`, status: 200},
 		{name: "upstream", body: `{
   "error": {
     "message": "failure private source secret-key",
     "code": 429
   }
-}`, status: 429, code: "upstream_error"},
+}`, status: 429},
 	}
 	changes := []func(map[string]any){
 		func(v map[string]any) {
 			v["answers"].(map[string]any)["team"].(map[string]any)["probabilities"] = map[string]any{"a": 1, "b": nil}
 		},
 		func(v map[string]any) { v["answers"].(map[string]any)["condition"].(map[string]any)["score"] = nil },
-		func(v map[string]any) { delete(v, "model") },
-		func(v map[string]any) { v["answers"].(map[string]any)["urgency"].(map[string]any)["legend"] = nil },
 		func(v map[string]any) {
 			v["answers"].(map[string]any)["unexpected"] = map[string]any{"type": "noul", "noul": 0}
 		},
@@ -361,10 +349,6 @@ func (s *classificationSuite) TestAtomicResponseErrorsAndUsageOmission() {
 			v["answers"].(map[string]any)["team"].(map[string]any)["probabilities"] = map[string]any{"a": 0.5}
 		},
 		func(v map[string]any) { v["answers"].(map[string]any)["team"].(map[string]any)["confidence"] = 2 },
-		func(v map[string]any) {
-			v["answers"].(map[string]any)["urgency"].(map[string]any)["legend"] = map[string]any{"0": "wrong"}
-		},
-		func(v map[string]any) { v["usage"] = map[string]any{"input_tokens": -1} },
 	}
 	for _, change := range changes {
 		var body map[string]any
@@ -379,9 +363,7 @@ func (s *classificationSuite) TestAtomicResponseErrorsAndUsageOmission() {
 			body string
 			// status supplies the HTTP response status independently of body validation.
 			status int
-			// code is the object-level failure category expected after the call.
-			code string
-		}{name: "incompatible", body: string(data), status: 200, code: "invalid_response"})
+		}{name: "incompatible", body: string(data), status: 200})
 	}
 	for _, test := range cases {
 		s.Run(test.name, func() {
@@ -392,52 +374,34 @@ func (s *classificationSuite) TestAtomicResponseErrorsAndUsageOmission() {
 				s.NoError(err)
 			}, time.Minute)
 			result := s.call(session, validArguments)
-			s.Require().True(result.IsError)
-			output := s.structured(result)
-			object := output["results"].([]any)[0].(map[string]any)
-			s.NotContains(object, "answers")
-			s.NotContains(object, "model")
-			diagnostic := object["error"].(map[string]any)
-			s.Equal(test.code, diagnostic["code"])
-			s.Equal("classify", diagnostic["operation"])
-			expectedAttempts := 1
-			if test.status == http.StatusTooManyRequests {
-				expectedAttempts = 3
-			}
-			s.InDelta(expectedAttempts, diagnostic["attempts"], 0)
-			s.InDelta(float64(test.status), diagnostic["http_status"], 0)
-			s.Equal("request-id", diagnostic["upstream_request_id"])
-			s.Equal(test.body, diagnostic["upstream_body"])
-			s.NotEmpty(diagnostic["message"])
-		})
-	}
-	for _, usage := range []string{`null`, `{}`, `{
-  "cost": null,
-  "input_tokens": null
-}`} {
-		s.Run("omitted usage", func() {
-			var body map[string]any
-			s.Require().NoError(json.Unmarshal([]byte(validAnswer), &body))
-			var value any
-			s.Require().NoError(json.Unmarshal([]byte(usage), &value))
-			body["usage"] = value
-			answers := body["answers"].(map[string]any)
-			delete(answers["team"].(map[string]any), "confidence")
-			answers["urgency"].(map[string]any)["confidence"] = nil
-			data, err := json.Marshal(body)
-			s.Require().NoError(err)
-			session := s.connect(
-				func(w http.ResponseWriter, _ *http.Request) { _, writeErr := w.Write(data); s.NoError(writeErr) },
-				time.Minute)
-			result := s.call(session, validArguments)
-			s.False(result.IsError)
+			s.Require().False(result.IsError)
 			object := s.structured(result)["results"].([]any)[0].(map[string]any)
-			s.NotContains(object, "usage")
-			answerMap := object["answers"].(map[string]any)
-			s.NotContains(answerMap["team"], "confidence")
-			s.NotContains(answerMap["urgency"], "confidence")
+			s.Require().Len(object, 2)
+			s.NotContains(object, "answers")
+			cause, ok := object["error"].(string)
+			s.Require().True(ok)
+			s.NotEmpty(cause)
+			if test.status == http.StatusTooManyRequests {
+				s.Equal("failure private source secret-key", cause)
+			}
 		})
 	}
+	var body map[string]any
+	s.Require().NoError(json.Unmarshal([]byte(validAnswer), &body))
+	answers := body["answers"].(map[string]any)
+	delete(answers["team"].(map[string]any), "confidence")
+	answers["urgency"].(map[string]any)["confidence"] = nil
+	data, err := json.Marshal(body)
+	s.Require().NoError(err)
+	session := s.connect(
+		func(w http.ResponseWriter, _ *http.Request) { _, writeErr := w.Write(data); s.NoError(writeErr) },
+		time.Minute,
+	)
+	result := s.call(session, validArguments)
+	s.Require().False(result.IsError)
+	projected := s.structured(result)["results"].([]any)[0].(map[string]any)["answers"].(map[string]any)
+	s.NotContains(projected["team"], "confidence")
+	s.NotContains(projected["urgency"], "confidence")
 }
 
 // TestPartialSuccessAndEmptyText preserves input order and successful empty-text classification after an overload.
@@ -472,8 +436,8 @@ func (s *classificationSuite) TestPartialSuccessAndEmptyText() {
 	s.False(result.IsError)
 	objects := s.structured(result)["results"].([]any)
 	s.Len(objects, 2)
-	s.Equal("error", objects[0].(map[string]any)["status"])
-	s.Equal("ok", objects[1].(map[string]any)["status"])
+	s.Equal("overloaded", objects[0].(map[string]any)["error"])
+	s.Contains(objects[1].(map[string]any), "answers")
 	s.Equal("empty", objects[1].(map[string]any)["id"])
 }
 
@@ -484,12 +448,8 @@ func (s *classificationSuite) TestConfiguredHTTPTimeout() {
 		s.NoError(err)
 	}, time.Nanosecond)
 	result := s.call(session, validArguments)
-	s.Require().True(result.IsError)
-	diagnostic := s.structured(result)["results"].([]any)[0].(map[string]any)["error"].(map[string]any)
-	s.Equal("request_failed", diagnostic["code"])
-	s.Contains(diagnostic["message"], "deadline exceeded")
-	s.Contains(diagnostic["message"], `Post "http://`)
-	s.NotContains(diagnostic, "http_status")
-	s.NotContains(diagnostic, "upstream_body")
-	s.InDelta(1, diagnostic["attempts"], 0)
+	s.Require().False(result.IsError)
+	cause := s.structured(result)["results"].([]any)[0].(map[string]any)["error"].(string)
+	s.Contains(cause, "deadline exceeded")
+	s.Contains(cause, `Post "http://`)
 }

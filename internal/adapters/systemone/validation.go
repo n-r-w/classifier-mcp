@@ -7,29 +7,20 @@ import (
 	"fmt"
 	"math"
 	"strconv"
-	"strings"
 
 	"github.com/samber/mo"
-	"github.com/santhosh-tekuri/jsonschema/v6"
 
 	"github.com/n-r-w/classifier-mcp/internal/domain"
 	"github.com/n-r-w/classifier-mcp/internal/usecases/classify"
 )
 
-// decodeResponse requires an actual model identity and an atomic answer set for all questions.
+// decodeResponse requires a complete compatible answer set for the requested question IDs.
 func decodeResponse(data []byte, request classify.Request) (classify.Response, error) {
 	var dto responseDTO
 	if err := json.Unmarshal(data, &dto); err != nil {
 		return classify.Response{}, fmt.Errorf("decode body: %w", err)
 	}
-	usage, err := convertUsage(dto.Usage.OrEmpty())
-	if err != nil {
-		return classify.Response{}, err
-	}
-	result := classify.Response{Model: dto.Model, Answers: nil, Usage: mo.TupleToOption(usage, usage.HasValues())}
-	if strings.TrimSpace(dto.Model) == "" {
-		return result, errors.New("model is missing or blank")
-	}
+	result := classify.Response{Answers: nil}
 	if len(dto.Answers) != len(request.Questions) {
 		return result, errors.New("answers must contain exactly all requested question IDs")
 	}
@@ -48,20 +39,6 @@ func decodeResponse(data []byte, request classify.Request) (classify.Response, e
 	// Assign only after every answer passes, so one bad assessment cannot expose a partial success.
 	result.Answers = answers
 	return result, nil
-}
-
-// convertUsage rejects invalid billing values and preserves each provider field's presence.
-func convertUsage(u usageDTO) (domain.Usage, error) {
-	if value, present := u.InputTokens.Get(); present && value < 0 {
-		return domain.Usage{}, errors.New("usage.input_tokens must be non-negative")
-	}
-	if value, present := u.OutputTokens.Get(); present && value < 0 {
-		return domain.Usage{}, errors.New("usage.output_tokens must be non-negative")
-	}
-	if value, present := u.Cost.Get(); present && (!isFinite(value) || value < 0) {
-		return domain.Usage{}, errors.New("usage.cost must be finite and non-negative")
-	}
-	return domain.Usage{InputTokens: u.InputTokens, OutputTokens: u.OutputTokens, Cost: u.Cost}, nil
 }
 
 // isFinite excludes values that cannot be represented in a JSON result.
@@ -111,14 +88,6 @@ func convertChoice(a answerDTO, q domain.ChoiceQuestion) (domain.Assessment, err
 	if err := validateDistribution(probabilities, keys); err != nil {
 		return domain.Assessment{}, err
 	}
-	selected := probabilities[selection]
-	// A one-millionth tolerance accepts rounded ties without selecting a replacement category.
-	const roundingTolerance = 0.000001
-	for _, p := range probabilities {
-		if p > selected+roundingTolerance {
-			return domain.Assessment{}, errors.New("choice is not a highest-probability category")
-		}
-	}
 	return mo.NewEither3Arg1[domain.Choice, domain.Noul, domain.Score](
 		domain.Choice{Selection: selection, Probabilities: probabilities, Confidence: a.Confidence},
 	), nil
@@ -136,7 +105,7 @@ func convertNoul(a answerDTO) (domain.Assessment, error) {
 	return mo.NewEither3Arg2[domain.Choice, domain.Noul, domain.Score](domain.Noul{Probability: value}), nil
 }
 
-// convertScore validates the weighted assessment and derives interpretation data from the caller's scale.
+// convertScore preserves the provider assessment after scale bounds and distribution-key checks.
 func convertScore(a answerDTO, q domain.ScoreQuestion, full bool) (domain.Assessment, error) {
 	value, present := a.Score.Get()
 	if a.Type != q.Kind() || !present {
@@ -146,72 +115,37 @@ func convertScore(a answerDTO, q domain.ScoreQuestion, full bool) (domain.Assess
 		return domain.Assessment{}, errors.New("score is outside the supplied scale")
 	}
 	keys := make([]string, len(q.Criteria))
-	legend := make(map[string]any, len(q.Criteria))
-	for i, description := range q.Criteria {
-		key := strconv.Itoa(i)
-		keys[i] = key
-		legend[key] = description
+	for i := range q.Criteria {
+		keys[i] = strconv.Itoa(i)
 	}
 	if full || a.Probabilities.IsSome() {
 		probabilities := a.Probabilities.OrEmpty()
 		if err := validateDistribution(probabilities, keys); err != nil {
 			return domain.Assessment{}, err
 		}
-		if err := validateWeightedScore(value, probabilities, keys); err != nil {
-			return domain.Assessment{}, err
-		}
 	}
-	if raw, reported := a.Legend.Get(); reported {
-		var actual map[string]any
-		decoder := json.NewDecoder(bytes.NewReader(raw))
-		decoder.UseNumber()
-		if err := decoder.Decode(&actual); err != nil {
-			return domain.Assessment{}, fmt.Errorf("decode returned legend: %w", err)
-		}
-		if err := validateLegend(actual, legend); err != nil {
-			return domain.Assessment{}, err
-		}
-	}
+
 	return mo.NewEither3Arg3[domain.Choice, domain.Noul, domain.Score](
-		domain.Score{Value: value, Probabilities: a.Probabilities, Legend: legend, Confidence: a.Confidence},
+		domain.Score{Value: value, Probabilities: a.Probabilities, Confidence: a.Confidence},
 	), nil
 }
 
-// validateDistribution requires exactly the caller's keys and a normalized finite distribution.
+// validateDistribution requires every expected key and finite probabilities in [0, 1].
 func validateDistribution(values map[string]float64, keys []string) error {
 	if len(values) != len(keys) {
 		return errors.New("probabilities must contain exactly the supplied criteria keys")
 	}
-	sum := 0.0
 	for _, key := range keys {
 		value, exists := values[key]
 		if !exists || !isProbability(value) {
 			return fmt.Errorf("probabilities[%q] must be numeric and in [0, 1]", key)
 		}
-		sum += value
 	}
-	// Allow provider rounding while preserving the original probabilities rather than renormalizing.
-	const roundingTolerance = 0.0001
-	if math.Abs(sum-1) > roundingTolerance {
-		return errors.New("probabilities must sum to 1 within provider rounding tolerance")
-	}
+
 	return nil
 }
 
-// validateWeightedScore allows numeric rounding proportional to the caller's scale span.
-func validateWeightedScore(score float64, probabilities map[string]float64, keys []string) error {
-	weighted := 0.0
-	for i, key := range keys {
-		weighted += float64(i) * probabilities[key]
-	}
-	const roundingTolerance = 0.0001
-	if math.Abs(weighted-score) > roundingTolerance*float64(max(1, len(keys)-1)) {
-		return errors.New("score is incompatible with its probability distribution")
-	}
-	return nil
-}
-
-// validateAnswerFields rejects extra variant fields and null distribution or legend values.
+// validateAnswerFields checks used assessment fields while leaving unused provider metadata uninterpreted.
 func validateAnswerFields(raw []byte, kind string) error {
 	var fields map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &fields); err != nil {
@@ -229,15 +163,15 @@ func validateAnswerFields(raw []byte, kind string) error {
 		allowed["score"] = true
 		allowed["probabilities"] = true
 		allowed["confidence"] = true
-		allowed["legend"] = true
+	}
+	used := map[string]bool{
+		domain.ChoiceKind: true, domain.NoulKind: true, domain.ScoreKind: true,
+		"probabilities": true, "confidence": true,
 	}
 	for field := range fields {
-		if !allowed[field] {
+		if used[field] && !allowed[field] {
 			return fmt.Errorf("incompatible answer field %q", field)
 		}
-	}
-	if rawLegend, exists := fields["legend"]; exists && bytes.Equal(bytes.TrimSpace(rawLegend), []byte("null")) {
-		return errors.New("legend must be an object when reported")
 	}
 	if rawProbabilities, exists := fields["probabilities"]; exists {
 		var probabilities map[string]json.RawMessage
@@ -252,24 +186,6 @@ func validateAnswerFields(raw []byte, kind string) error {
 				return fmt.Errorf("probabilities[%q] must be numeric", key)
 			}
 		}
-	}
-	return nil
-}
-
-// validateLegend compares structured JSON values and exact numbers, without rounding identifiers.
-func validateLegend(actualLegend, expectedLegend map[string]any) error {
-	compiler := jsonschema.NewCompiler()
-	const location = "urn:classifier-mcp:score-legend"
-	if err := compiler.AddResource(location, map[string]any{"const": expectedLegend}); err != nil {
-		return fmt.Errorf("register legend comparison: %w", err)
-	}
-	schema, err := compiler.Compile(location)
-	if err != nil {
-		return fmt.Errorf("compile legend comparison: %w", err)
-	}
-	// JSON numeric spelling can differ (1 and 1.0), but the values must match exactly.
-	if validationErr := schema.Validate(actualLegend); validationErr != nil {
-		return fmt.Errorf("legend does not match the supplied criteria: %w", validationErr)
 	}
 	return nil
 }

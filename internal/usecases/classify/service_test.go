@@ -34,26 +34,15 @@ func (s *executionSuite) TestOrderedCompletion() {
 		defer cancel()
 		completed := make(chan struct{})
 		model.EXPECT().Evaluate(gomock.Any(), gomock.Any()).DoAndReturn(
-			func(callCtx context.Context, request Request) (Response, mo.Option[domain.Diagnostic]) {
+			func(callCtx context.Context, request Request) (Response, error) {
 				if request.Content == "slow" {
 					<-callCtx.Done()
-					return Response{}, mo.Some(domain.Diagnostic{
-						Code:              "canceled",
-						Operation:         "classify",
-						Message:           callCtx.Err().Error(),
-						HTTPStatus:        mo.None[int](),
-						UpstreamBody:      mo.None[string](),
-						UpstreamRequestID: mo.None[string](),
-						Attempts:          mo.None[int](),
-						RetryAfterSeconds: mo.None[float64](),
-					})
+					return Response{}, callCtx.Err()
 				}
 				close(completed)
 				return Response{
-					Model:   "actual",
 					Answers: nil,
-					Usage:   mo.None[domain.Usage](),
-				}, mo.None[domain.Diagnostic]()
+				}, nil
 			}).Times(2)
 		command := server.Command{Objects: []server.Object{
 			{ID: "slow", Source: mo.Left[domain.TextSource, domain.FileSource](domain.TextSource{Text: "slow"})},

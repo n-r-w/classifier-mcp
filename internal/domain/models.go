@@ -56,17 +56,11 @@ type Choice struct {
 	Confidence mo.Option[float64]
 }
 
-// Kind supplies the response discriminator for category selection.
-func (a Choice) Kind() string { return ChoiceKind }
-
 // Noul is the probability that a condition holds, rather than a thresholded Boolean.
 type Noul struct {
 	// Likelihood that the condition holds in [0, 1]; zero is a reported result.
 	Probability float64
 }
-
-// Kind supplies the response discriminator for condition probability.
-func (a Noul) Kind() string { return NoulKind }
 
 // Score retains the probability-weighted value on a caller's scale.
 type Score struct {
@@ -74,28 +68,8 @@ type Score struct {
 	Value float64
 	// Probabilities may be absent when the caller requests only the compact result.
 	Probabilities mo.Option[map[string]float64]
-	// Decimal level indices map to the original caller descriptions, preserving structured values.
-	Legend map[string]any
 	// Optional provider uncertainty in [0, 1]; None remains unreported.
 	Confidence mo.Option[float64]
-}
-
-// Kind supplies the response discriminator for ordered-scale assessment.
-func (a Score) Kind() string { return ScoreKind }
-
-// Usage preserves unreported token counts and cost separately from reported zero.
-type Usage struct {
-	// Provider-reported input token count; None distinguishes missing from zero.
-	InputTokens mo.Option[int64]
-	// Provider-reported generated token count; None distinguishes missing from zero.
-	OutputTokens mo.Option[int64]
-	// Cost stays in the endpoint's billing unit; OpenRouter reports credits.
-	Cost mo.Option[float64]
-}
-
-// HasValues reports whether the provider supplied at least one usage value.
-func (u Usage) HasValues() bool {
-	return u.InputTokens.IsSome() || u.OutputTokens.IsSome() || u.Cost.IsSome()
 }
 
 // Source identifies either caller text or a local file to acquire.

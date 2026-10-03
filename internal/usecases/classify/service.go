@@ -50,32 +50,32 @@ func (s *Service) Classify(ctx context.Context, command server.Command) []server
 
 // evaluateObject produces one atomic outcome in a worker-owned result slot.
 func (s *Service) evaluateObject(ctx context.Context, object server.Object, command server.Command) server.Outcome {
-	content, location, sourceDiagnostic := s.acquire(ctx, object.Source)
-	if detail, present := sourceDiagnostic.Get(); present {
+	content, location, sourceErr := s.acquire(ctx, object.Source)
+	if sourceErr != nil {
 		return mo.Right[server.Success, server.Failure](server.Failure{
-			ID: object.ID, Diagnostic: detail, Usage: mo.None[domain.Usage](),
+			ID: object.ID, Error: sourceErr.Error(),
 		})
 	}
-	response, diagnostic := s.model.Evaluate(ctx, Request{
+	response, err := s.model.Evaluate(ctx, Request{
 		Content: content, Source: location, Task: command.Task, Questions: command.Questions, Full: command.Full,
 	})
-	if detail, present := diagnostic.Get(); present {
+	if err != nil {
 		return mo.Right[server.Success, server.Failure](server.Failure{
-			ID: object.ID, Diagnostic: detail, Usage: response.Usage,
+			ID: object.ID, Error: err.Error(),
 		})
 	}
 	return mo.Left[server.Success, server.Failure](server.Success{
-		ID: object.ID, Model: response.Model, Answers: response.Answers, Usage: response.Usage,
+		ID: object.ID, Answers: response.Answers,
 	})
 }
 
 // acquire selects caller text or obtains local text with resolved source metadata.
 func (s *Service) acquire(ctx context.Context, source domain.Source,
-) (content string, location mo.Option[domain.FileSource], diagnostic mo.Option[domain.Diagnostic]) {
+) (content string, location mo.Option[domain.FileSource], err error) {
 	if text, present := source.Left(); present {
-		return text.Text, mo.None[domain.FileSource](), mo.None[domain.Diagnostic]()
+		return text.Text, mo.None[domain.FileSource](), nil
 	}
 	file, _ := source.Right()
-	acquired, diagnostic := s.sources.Read(ctx, file)
-	return acquired.Content, mo.Some(acquired.Source), diagnostic
+	acquired, err := s.sources.Read(ctx, file)
+	return acquired.Content, mo.Some(acquired.Source), err
 }

@@ -14,7 +14,6 @@ import (
 
 	"github.com/samber/mo"
 
-	"github.com/n-r-w/classifier-mcp/internal/domain"
 	"github.com/n-r-w/classifier-mcp/internal/usecases/classify"
 )
 
@@ -54,37 +53,37 @@ func mapRequest(request classify.Request, model string) requestDTO {
 func (c *Client) Evaluate(
 	ctx context.Context,
 	request classify.Request,
-) (classify.Response, mo.Option[domain.Diagnostic]) {
+) (classify.Response, error) {
 	if err := ctx.Err(); err != nil {
-		return cancelFailure(mo.None[domain.Diagnostic](), err)
+		return classify.Response{}, err
 	}
 	body, err := json.Marshal(mapRequest(request, c.model))
 	if err != nil {
-		return fail("request_failed", fmt.Sprintf("encode System One request: %v", err), nil, nil, 0)
+		return classify.Response{}, fmt.Errorf("encode System One request: %w", err)
 	}
-	last := mo.None[domain.Diagnostic]()
+	last := mo.None[attemptFailure]()
 	for attempt := 1; ; attempt++ {
 		if err = c.acquire(ctx); err != nil {
-			return cancelFailure(last, err)
+			return classify.Response{}, cancellationError(last, err)
 		}
 		result, diagnostic := c.attempt(ctx, request, body, attempt)
 		<-c.capacity
 		detail, failed := diagnostic.Get()
 		if !failed {
-			return result, diagnostic
+			return result, nil
 		}
-		if detail.Code == canceledCode && detail.Attempts.OrEmpty() == attempt-1 {
-			return cancelFailure(last, ctx.Err())
+		if detail.kind == canceledCode && detail.attempts == attempt-1 {
+			return classify.Response{}, cancellationError(last, ctx.Err())
 		}
-		if detail.Code != "upstream_error" ||
-			(detail.HTTPStatus.OrEmpty() != http.StatusTooManyRequests && detail.HTTPStatus.OrEmpty() != 529) ||
+		if detail.kind != "upstream_error" ||
+			(detail.httpStatus.OrEmpty() != http.StatusTooManyRequests && detail.httpStatus.OrEmpty() != 529) ||
 			attempt == c.maxAttempts {
-			return result, diagnostic
+			return result, detail.cause
 		}
 		last = diagnostic
-		delay := detail.RetryAfterSeconds.OrElse(c.retryDelay.Seconds())
+		delay := detail.retryAfterSeconds.OrElse(c.retryDelay.Seconds())
 		if err = waitRetry(ctx, delay); err != nil {
-			return cancelFailure(last, err)
+			return classify.Response{}, cancellationError(last, err)
 		}
 	}
 }
@@ -109,24 +108,23 @@ func (c *Client) acquire(ctx context.Context) error {
 // attempt sends one HTTP request while the caller owns a capacity slot.
 func (c *Client) attempt(ctx context.Context, request classify.Request, body []byte,
 	attempt int,
-) (classify.Response, mo.Option[domain.Diagnostic]) {
+) (classify.Response, mo.Option[attemptFailure]) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.endpoint, bytes.NewReader(body))
 	if err != nil {
-		return fail("request_failed", fmt.Sprintf("create System One request: %v", err), nil, nil, attempt-1)
+		return fail("request_failed", fmt.Errorf("create System One request: %w", err), nil, attempt-1)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	if c.apiKey != "" {
 		req.Header.Set("Authorization", "Bearer "+c.apiKey)
 	}
 	if err = ctx.Err(); err != nil {
-		return fail(canceledCode, err.Error(), nil, nil, attempt-1)
+		return fail(canceledCode, err, nil, attempt-1)
 	}
 	response, err := c.http.Do(req)
 	if err != nil {
 		return fail(
 			resolveRequestFailureCode(ctx),
-			fmt.Sprintf("System One HTTP request failed: %v", err),
-			nil,
+			fmt.Errorf("system one HTTP request failed: %w", err),
 			nil,
 			attempt,
 		)
@@ -136,24 +134,20 @@ func (c *Client) attempt(ctx context.Context, request classify.Request, body []b
 	if err != nil {
 		return fail(
 			resolveRequestFailureCode(ctx),
-			fmt.Sprintf("read System One response: %v", err),
+			fmt.Errorf("read System One response: %w", err),
 			response,
-			data,
 			attempt,
 		)
 	}
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
-		return fail("upstream_error", fmt.Sprintf("System One returned HTTP %d: %s", response.StatusCode, data),
-			response, data, attempt)
+		return fail("upstream_error", errors.New(providerCause(response.StatusCode, data)),
+			response, attempt)
 	}
 	parsed, err := decodeResponse(data, request)
 	if err != nil {
-		failed, diagnostic := fail("invalid_response", fmt.Sprintf("invalid System One response: %v", err),
-			response, data, attempt)
-		failed.Usage = parsed.Usage
-		return failed, diagnostic
+		return fail("invalid_response", fmt.Errorf("invalid System One response: %w", err), response, attempt)
 	}
-	return parsed, mo.None[domain.Diagnostic]()
+	return parsed, mo.None[attemptFailure]()
 }
 
 // resolveRequestFailureCode distinguishes caller cancellation from ambiguous transport failures and client timeouts.
@@ -164,16 +158,13 @@ func resolveRequestFailureCode(ctx context.Context) string {
 	return "request_failed"
 }
 
-// cancelFailure retains the last overload diagnostics when cancellation interrupts capacity or retry waits.
-func cancelFailure(last mo.Option[domain.Diagnostic], cause error) (classify.Response, mo.Option[domain.Diagnostic]) {
-	diagnostic, present := last.Get()
+// cancellationError keeps the last overload cause when cancellation interrupts a retry or capacity wait.
+func cancellationError(last mo.Option[attemptFailure], cause error) error {
+	previous, present := last.Get()
 	if !present {
-		_, initial := fail(canceledCode, cause.Error(), nil, nil, 0)
-		return classify.Response{}, initial
+		return cause
 	}
-	diagnostic.Code = canceledCode
-	diagnostic.Message += ": " + cause.Error()
-	return classify.Response{}, mo.Some(diagnostic)
+	return fmt.Errorf("%w: %w", previous.cause, cause)
 }
 
 // waitRetry observes cancellation for zero delays and waits the full supplied finite delay.
@@ -194,42 +185,25 @@ func waitRetry(ctx context.Context, seconds float64) error {
 	return ctx.Err()
 }
 
-// fail retains the endpoint body and concrete cause with the actual HTTP attempt count.
+// fail retains attempt state privately until the client decides whether to retry or return its cause.
 func fail(
-	code, message string,
+	kind string,
+	cause error,
 	response *http.Response,
-	body []byte,
 	attempts int,
-) (classify.Response, mo.Option[domain.Diagnostic]) {
-	diagnostic := domain.Diagnostic{
-		Code:              code,
-		Operation:         classifyOperation,
-		Message:           message,
-		HTTPStatus:        mo.None[int](),
-		UpstreamBody:      mo.EmptyableToOption(string(body)),
-		UpstreamRequestID: mo.None[string](),
-		Attempts:          mo.EmptyableToOption(attempts),
-		RetryAfterSeconds: mo.None[float64](),
+) (classify.Response, mo.Option[attemptFailure]) {
+	failure := attemptFailure{
+		kind:              kind,
+		cause:             cause,
+		httpStatus:        mo.None[int](),
+		attempts:          attempts,
+		retryAfterSeconds: mo.None[float64](),
 	}
 	if response != nil {
-		diagnostic.HTTPStatus = mo.Some(response.StatusCode)
-		diagnostic.UpstreamRequestID = mo.EmptyableToOption(
-			response.Header.Get("X-Request-ID"),
-		)
-		if diagnostic.UpstreamRequestID.IsNone() {
-			diagnostic.UpstreamRequestID = mo.EmptyableToOption(
-				response.Header.Get("X-OpenRouter-Request-ID"),
-			)
-		}
-		if diagnostic.UpstreamRequestID.IsNone() {
-			var metadata responseMetadataDTO
-			if err := json.Unmarshal(body, &metadata); err == nil {
-				diagnostic.UpstreamRequestID = mo.EmptyableToOption(metadata.ID.OrEmpty())
-			}
-		}
-		diagnostic.RetryAfterSeconds = parseRetryAfter(response.Header.Get("Retry-After"))
+		failure.httpStatus = mo.Some(response.StatusCode)
+		failure.retryAfterSeconds = parseRetryAfter(response.Header.Get("Retry-After"))
 	}
-	return classify.Response{}, mo.Some(diagnostic)
+	return classify.Response{}, mo.Some(failure)
 }
 
 // parseRetryAfter converts a finite delay or HTTP date to seconds, retaining a supplied zero.
@@ -247,4 +221,33 @@ func parseRetryAfter(value string) mo.Option[float64] {
 	}
 	seconds = max(0, time.Until(date).Seconds())
 	return mo.Some(seconds)
+}
+
+// providerCause extracts the endpoint's actual message without returning its metadata object.
+func providerCause(status int, body []byte) string {
+	statusCause := fmt.Sprintf("System One returned HTTP %d", status)
+	if len(body) == 0 {
+		return statusCause
+	}
+	if !json.Valid(body) {
+		return string(body)
+	}
+	var reported providerErrorDTO
+	if err := json.Unmarshal(body, &reported); err != nil {
+		return statusCause
+	}
+	var text string
+	if err := json.Unmarshal(reported.Error, &text); err == nil && text != "" {
+		return text
+	}
+	var cause providerCauseDTO
+	if err := json.Unmarshal(reported.Error, &cause); err == nil {
+		if message, present := cause.Message.Get(); present && message != "" {
+			return message
+		}
+	}
+	if err := json.Unmarshal(reported.Message, &text); err == nil && text != "" {
+		return text
+	}
+	return statusCause
 }

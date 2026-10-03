@@ -29,7 +29,7 @@ Improve the main LLM's efficiency and reduce its cost of processing files by del
 - Any text file, regardless of filename extension.
 - Category selection, independent condition checks, and assessments on caller-defined ordered scales.
 - Lists of objects with identifiable outcomes and partial success.
-- Concrete error causes and available technical diagnostics.
+- Concise concrete error causes for independent objects.
 - Local, personal use.
 
 ### Out of scope
@@ -59,21 +59,21 @@ Improve the main LLM's efficiency and reduce its cost of processing files by del
   - Origin: source, the supplied CodeQuality.yaml scenario, the user's selection of all three assessment types, and approval of the requirements.
   - Goal: Delegate several classification decisions together.
   - Goal achievement: Partial. Covers the agreed assessment types without requiring the main LLM to make those judgments itself.
-- [x] FRQ-05: Return an identifiable outcome for each submitted object. An unsuccessful object does not suppress successful results for other objects.
-  - Origin: source, the user's decision to preserve partial success.
+- [x] FRQ-05: Return ordered identifiable outcomes for every processable batch. Each object failure remains an independent result, including when every object fails.
+  - Origin: source, the user's decision that independent item failures remain normal batch outcomes.
   - Goal: Avoid repeating successful classification work.
   - Goal achievement: Partial. Preserves usable results when individual objects fail.
-- [x] FRQ-06: For failures, preserve concrete causes and available technical diagnostics unchanged, without masking or filtering.
-  - Origin: source, the user's explicit decision to retain unfiltered error diagnostics in this local, personal tool.
+- [x] FRQ-06: For each failed object, return its identity and a concise string containing the actual source, transport, provider, decoding, or cancellation cause.
+  - Origin: source, the user's aligned decision to return concise causes without masking or verbose service metadata.
   - Goal: Enable the caller to understand and resolve failures.
   - Goal achievement: Partial. Avoids additional investigation caused by concealed error details.
 
 ### Non-functional requirements
 
-- [x] NRQ-01: Return classification outcomes, interpretation data, object associations, and failure diagnostics. Successful outputs exclude source contents. Failure diagnostics preserve any source contents or credentials echoed by the endpoint.
-  - Origin: formulated from the cost-reduction goal, then refined by the user's explicit exception for unfiltered error diagnostics.
-  - Goal: Reduce the amount of source content processed by the main LLM on successful classification.
-  - Goal achievement: Partial. Keeps source contents out of successful results while preserving complete failure diagnostics.
+- [x] NRQ-01: Return minimal object associations and assessments: success is `id` plus `answers`; failure is `id` plus an `error` string. Assessment fields contain the provider values, optional confidence, selected Choice probability, and requested full distributions. The server preserves those values without statistical cross-checks.
+  - Origin: source, the user's approved minimal-response and provider-value decisions.
+  - Goal: Reduce the amount of response content processed by the main LLM.
+  - Goal achievement: Partial. The caller retains task, criteria, and source descriptions; the server returns the assessments and actual failure causes.
 
 ## Open questions
 

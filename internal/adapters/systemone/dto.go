@@ -52,14 +52,10 @@ type questionDTO struct {
 	Criteria mo.Option[any] `json:"criteria,omitzero"`
 }
 
-// responseDTO retains each answer as JSON until validation against its question.
+// responseDTO extracts only the answer data needed by classification.
 type responseDTO struct {
-	// Required nonblank identity reported by the endpoint.
-	Model string `json:"model"`
-	// Raw assessments are validated against the matching requested definitions.
+	// Answers retains each assessment until validation against the corresponding question.
 	Answers map[string]json.RawMessage `json:"answers"`
-	// None for absent or null provider usage; unknown billing values are not estimated.
-	Usage mo.Option[usageDTO] `json:"usage"`
 }
 
 // answerDTO captures presence separately from zero before selecting an assessment variant.
@@ -77,22 +73,18 @@ type answerDTO struct {
 	Probabilities mo.Option[map[string]float64] `json:"probabilities"`
 	// Optional provider uncertainty in [0, 1]; absent or null stays None.
 	Confidence mo.Option[float64] `json:"confidence"`
-	// Raw Score descriptions preserve numeric tokens before comparison with caller criteria.
-	Legend mo.Option[json.RawMessage] `json:"legend"`
 }
 
-// usageDTO treats absent and null fields as unreported, while retaining reported zeros.
-type usageDTO struct {
-	// Optional nonnegative count of tokens consumed for this object request.
-	InputTokens mo.Option[int64] `json:"input_tokens"`
-	// Optional nonnegative count of generated answer tokens.
-	OutputTokens mo.Option[int64] `json:"output_tokens"`
-	// Optional nonnegative amount in the endpoint billing unit; zero is reported, not absent.
-	Cost mo.Option[float64] `json:"cost"`
+// providerErrorDTO extracts the System One error message without projecting service metadata.
+type providerErrorDTO struct {
+	// Error can be a message string or the documented object containing message.
+	Error json.RawMessage `json:"error"`
+	// Message remains raw until the direct-message alternative is needed.
+	Message json.RawMessage `json:"message"`
 }
 
-// responseMetadataDTO extracts a provider request identity for failure diagnostics.
-type responseMetadataDTO struct {
-	// Optional endpoint request identity used when response headers supply none.
-	ID mo.Option[string] `json:"id"`
+// providerCauseDTO contains the documented message inside an error object.
+type providerCauseDTO struct {
+	// Message is the endpoint's actual failure explanation.
+	Message mo.Option[string] `json:"message"`
 }

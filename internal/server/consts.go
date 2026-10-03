@@ -260,29 +260,14 @@ const outputSchema = `{
               "id": {
                 "type": "string"
               },
-              "status": {
-                "type": "string",
-                "enum": [
-                  "ok"
-                ]
-              },
-              "model": {
-                "type": "string",
-                "minLength": 1
-              },
               "answers": {
                 "type": "object",
+                "minProperties": 1,
                 "additionalProperties": {
                   "oneOf": [
                     {
                       "type": "object",
                       "properties": {
-                        "type": {
-                          "type": "string",
-                          "enum": [
-                            "choice"
-                          ]
-                        },
                         "choice": {
                           "type": "string"
                         },
@@ -298,7 +283,6 @@ const outputSchema = `{
                         }
                       },
                       "required": [
-                        "type",
                         "choice",
                         "probability"
                       ],
@@ -307,12 +291,6 @@ const outputSchema = `{
                     {
                       "type": "object",
                       "properties": {
-                        "type": {
-                          "type": "string",
-                          "enum": [
-                            "choice"
-                          ]
-                        },
                         "choice": {
                           "type": "string"
                         },
@@ -328,20 +306,15 @@ const outputSchema = `{
                         },
                         "probabilities": {
                           "type": "object",
+                          "minProperties": 1,
                           "additionalProperties": {
                             "type": "number",
                             "minimum": 0,
                             "maximum": 1
-                          },
-                          "minProperties": 1,
-                          "propertyNames": {
-                            "type": "string",
-                            "minLength": 1
                           }
                         }
                       },
                       "required": [
-                        "type",
                         "choice",
                         "probability",
                         "probabilities"
@@ -351,12 +324,20 @@ const outputSchema = `{
                     {
                       "type": "object",
                       "properties": {
-                        "type": {
-                          "type": "string",
-                          "enum": [
-                            "score"
-                          ]
-                        },
+                        "noul": {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        }
+                      },
+                      "required": [
+                        "noul"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
                         "score": {
                           "type": "number",
                           "minimum": 0
@@ -368,7 +349,6 @@ const outputSchema = `{
                         }
                       },
                       "required": [
-                        "type",
                         "score"
                       ],
                       "additionalProperties": false
@@ -376,12 +356,6 @@ const outputSchema = `{
                     {
                       "type": "object",
                       "properties": {
-                        "type": {
-                          "type": "string",
-                          "enum": [
-                            "score"
-                          ]
-                        },
                         "score": {
                           "type": "number",
                           "minimum": 0
@@ -393,101 +367,26 @@ const outputSchema = `{
                         },
                         "probabilities": {
                           "type": "object",
+                          "minProperties": 1,
                           "additionalProperties": {
                             "type": "number",
                             "minimum": 0,
                             "maximum": 1
-                          },
-                          "minProperties": 1,
-                          "propertyNames": {
-                            "type": "string",
-                            "minLength": 1
-                          }
-                        },
-                        "legend": {
-                          "type": "object",
-                          "additionalProperties": {
-                            "anyOf": [
-                              {
-                                "type": "string"
-                              },
-                              {
-                                "type": "object"
-                              },
-                              {
-                                "type": "array"
-                              }
-                            ]
-                          },
-                          "minProperties": 1,
-                          "propertyNames": {
-                            "type": "string",
-                            "minLength": 1
                           }
                         }
                       },
                       "required": [
-                        "type",
                         "score",
-                        "probabilities",
-                        "legend"
-                      ],
-                      "additionalProperties": false
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "type": {
-                          "type": "string",
-                          "enum": [
-                            "noul"
-                          ]
-                        },
-                        "noul": {
-                          "type": "number",
-                          "minimum": 0,
-                          "maximum": 1
-                        }
-                      },
-                      "required": [
-                        "type",
-                        "noul"
+                        "probabilities"
                       ],
                       "additionalProperties": false
                     }
                   ]
-                },
-                "minProperties": 1,
-                "propertyNames": {
-                  "type": "string",
-                  "minLength": 1
                 }
-              },
-              "usage": {
-                "type": "object",
-                "properties": {
-                  "input_tokens": {
-                    "type": "integer",
-                    "minimum": 0
-                  },
-                  "output_tokens": {
-                    "type": "integer",
-                    "minimum": 0
-                  },
-                  "cost": {
-                    "type": "number",
-                    "minimum": 0
-                  }
-                },
-                "required": [],
-                "additionalProperties": false,
-                "minProperties": 1
               }
             },
             "required": [
               "id",
-              "status",
-              "model",
               "answers"
             ],
             "additionalProperties": false
@@ -498,85 +397,13 @@ const outputSchema = `{
               "id": {
                 "type": "string"
               },
-              "status": {
-                "type": "string",
-                "enum": [
-                  "error"
-                ]
-              },
               "error": {
-                "type": "object",
-                "properties": {
-                  "code": {
-                    "type": "string",
-                    "enum": [
-                      "invalid_source",
-                      "source_read_failed",
-                      "upstream_error",
-                      "request_failed",
-                      "invalid_response",
-                      "canceled"
-                    ]
-                  },
-                  "operation": {
-                    "type": "string",
-                    "enum": [
-                      "classify",
-                      "read_source"
-                    ]
-                  },
-                  "message": {
-                    "type": "string"
-                  },
-                  "http_status": {
-                    "type": "integer"
-                  },
-                  "upstream_body": {
-                    "type": "string"
-                  },
-                  "upstream_request_id": {
-                    "type": "string"
-                  },
-                  "attempts": {
-                    "type": "integer",
-                    "minimum": 1
-                  },
-                  "retry_after_seconds": {
-                    "type": "number",
-                    "minimum": 0
-                  }
-                },
-                "required": [
-                  "code",
-                  "operation",
-                  "message"
-                ],
-                "additionalProperties": false
-              },
-              "usage": {
-                "type": "object",
-                "properties": {
-                  "input_tokens": {
-                    "type": "integer",
-                    "minimum": 0
-                  },
-                  "output_tokens": {
-                    "type": "integer",
-                    "minimum": 0
-                  },
-                  "cost": {
-                    "type": "number",
-                    "minimum": 0
-                  }
-                },
-                "required": [],
-                "additionalProperties": false,
-                "minProperties": 1
+                "type": "string",
+                "minLength": 1
               }
             },
             "required": [
               "id",
-              "status",
               "error"
             ],
             "additionalProperties": false
@@ -591,13 +418,8 @@ const outputSchema = `{
   "additionalProperties": false
 }`
 
-// Shared JSON field names keep the result serializers aligned with the MCP schema.
+// Optional assessment field names are shared by the projection serializers.
 const (
-	fieldID            = "id"
-	fieldStatus        = "status"
-	fieldType          = "type"
 	fieldConfidence    = "confidence"
 	fieldProbabilities = "probabilities"
-	fieldUsage         = "usage"
-	statusError        = "error"
 )

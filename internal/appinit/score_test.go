@@ -26,8 +26,7 @@ func (s *classificationSuite) TestScoreDistributionRequirement() {
 	arguments, err := json.Marshal(input)
 	s.Require().NoError(err)
 	full := s.call(session, string(arguments))
-	s.Require().True(full.IsError)
-	diagnostic := s.structured(full)["results"].([]any)[0].(map[string]any)["error"].(map[string]any)
-	s.Equal("invalid_response", diagnostic["code"])
-	s.Contains(diagnostic["message"], "probabilities")
+	s.Require().False(full.IsError)
+	cause := s.structured(full)["results"].([]any)[0].(map[string]any)["error"].(string)
+	s.Contains(cause, "probabilities")
 }

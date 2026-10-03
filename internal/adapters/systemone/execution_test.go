@@ -88,7 +88,7 @@ func (s *executionSuite) TestSharedCapacityAndQueuedCancellation() {
 		}).AnyTimes()
 		client := New(&http.Client{Transport: transport, CheckRedirect: nil, Jar: nil, Timeout: time.Minute},
 			"http://fixture/systemone", "configured", "", 2, 3, time.Second)
-		done := make(chan mo.Option[domain.Diagnostic], 3)
+		done := make(chan error, 3)
 		for range 2 {
 			go func() { _, diagnostic := client.Evaluate(t.Context(), newModelRequest()); done <- diagnostic }()
 		}
@@ -100,12 +100,11 @@ func (s *executionSuite) TestSharedCapacityAndQueuedCancellation() {
 		assert.Equal(t, int32(2), started.Load())
 		cancel()
 		synctest.Wait()
-		diagnostic := (<-done).OrEmpty()
-		require.Equal(t, "canceled", diagnostic.Code)
-		assert.True(t, diagnostic.Attempts.IsNone())
+		diagnostic := <-done
+		require.ErrorIs(t, diagnostic, context.Canceled)
 		close(release)
 		for range 2 {
-			require.True(t, (<-done).IsNone())
+			require.NoError(t, <-done)
 		}
 	})
 }
@@ -150,15 +149,15 @@ func (s *executionSuite) TestRetryDelays() {
 				client := New(&http.Client{Transport: transport, CheckRedirect: nil, Jar: nil, Timeout: time.Minute},
 					"http://fixture/systemone", "configured", "", 1, 2, time.Second)
 				result, diagnostic := client.Evaluate(t.Context(), newModelRequest())
-				require.True(t, diagnostic.IsNone())
-				require.Equal(t, "actual", result.Model)
+				require.NoError(t, diagnostic)
+				require.Contains(t, result.Answers, "q")
 				require.Equal(t, test.delay, time.Since(start))
 			})
 		})
 	}
 }
 
-// TestRetryWaitCancellation preserves final overload details and does not send another HTTP attempt.
+// TestRetryWaitCancellation retains the final overload cause and stops before another HTTP attempt.
 func (s *executionSuite) TestRetryWaitCancellation() {
 	synctest.Test(s.T(), func(t *testing.T) {
 		transport := NewMockRoundTripper(gomock.NewController(t))
@@ -170,19 +169,13 @@ func (s *executionSuite) TestRetryWaitCancellation() {
 		client := New(&http.Client{Transport: transport, CheckRedirect: nil, Jar: nil, Timeout: time.Minute},
 			"http://fixture/systemone", "configured", "", 1, 3, time.Second)
 		ctx, cancel := context.WithCancel(t.Context())
-		done := make(chan domain.Diagnostic, 1)
-		go func() { _, diagnostic := client.Evaluate(ctx, newModelRequest()); done <- diagnostic.OrEmpty() }()
+		done := make(chan error, 1)
+		go func() { _, diagnostic := client.Evaluate(ctx, newModelRequest()); done <- diagnostic }()
 		synctest.Wait()
 		cancel()
 		diagnostic := <-done
-		require.Equal(t, "canceled", diagnostic.Code)
-		require.Equal(t, 1, diagnostic.Attempts.OrEmpty())
-		require.Equal(t, 529, diagnostic.HTTPStatus.OrEmpty())
-		require.Equal(t, "last overload\n", diagnostic.UpstreamBody.OrEmpty())
-		require.Equal(t, "final-id", diagnostic.UpstreamRequestID.OrEmpty())
-		require.InDelta(t, 1e30, diagnostic.RetryAfterSeconds.OrEmpty(), 0)
-		require.Contains(t, diagnostic.Message, "last overload\n")
-		require.Contains(t, diagnostic.Message, context.Canceled.Error())
+		require.Contains(t, diagnostic.Error(), "last overload\n")
+		require.ErrorIs(t, diagnostic, context.Canceled)
 	})
 }
 
@@ -193,17 +186,15 @@ func (s *executionSuite) TestFailuresAreNotRetried() {
 		name string
 		// status supplies the endpoint HTTP status when a response exists.
 		status int
-		// body is retained unchanged in response diagnostics.
+		// body supplies the external HTTP response used to verify the concrete cause.
 		body string
 		// cause is a concrete ambiguous HTTP transport failure.
 		cause error
-		// code is the expected object failure category.
-		code string
 	}{
-		{name: "network", status: 0, body: "", cause: errors.New("ambiguous connection failure"), code: "request_failed"},
-		{name: "timeout", status: 0, body: "", cause: context.DeadlineExceeded, code: "request_failed"},
-		{name: "unrelated status", status: 503, body: "unavailable", cause: nil, code: "upstream_error"},
-		{name: "incompatible", status: 200, body: `{"model":"actual","answers":{}}`, cause: nil, code: "invalid_response"},
+		{name: "network", status: 0, body: "", cause: errors.New("ambiguous connection failure")},
+		{name: "timeout", status: 0, body: "", cause: context.DeadlineExceeded},
+		{name: "unrelated status", status: 503, body: "unavailable", cause: nil},
+		{name: "incompatible", status: 200, body: `{"model":"actual","answers":{}}`, cause: nil},
 	} {
 		s.Run(test.name, func() {
 			transport := NewMockRoundTripper(gomock.NewController(s.T()))
@@ -216,13 +207,11 @@ func (s *executionSuite) TestFailuresAreNotRetried() {
 			client := New(&http.Client{Transport: transport, CheckRedirect: nil, Jar: nil, Timeout: time.Minute},
 				"http://fixture/systemone", "configured", "", 1, 3, time.Second)
 			_, failure := client.Evaluate(s.T().Context(), newModelRequest())
-			diagnostic := failure.OrEmpty()
-			s.Equal(test.code, diagnostic.Code)
-			s.Equal(1, diagnostic.Attempts.OrEmpty())
+			diagnostic := failure
 			if test.cause != nil {
-				s.Contains(diagnostic.Message, test.cause.Error())
+				s.ErrorIs(diagnostic, test.cause)
 			} else {
-				s.Equal(test.body, diagnostic.UpstreamBody.OrEmpty())
+				s.NotEmpty(diagnostic.Error())
 			}
 		})
 	}
