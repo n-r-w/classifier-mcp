@@ -75,6 +75,16 @@ See the [Claude Code MCP documentation](https://code.claude.com/docs/en/mcp) for
 
 Configure a local stdio server with the executable's absolute path as its command, an empty argument list, and the same `SYSTEM_ONE_*` environment settings. The agent starts the process and communicates over stdin/stdout. `SYSTEM_ONE_ENDPOINT` is the classifier's HTTP endpoint; it is not an HTTP MCP server address. Use the agent's MCP connection panel to verify that the `classify` tool is available.
 
+### Instructions for agents
+
+The `classify` tool description carries usage rules, so every agent that can call the tool receives them, including subagents that get tool definitions but not MCP server instructions. The description tells the agent:
+
+- to call `classify` when a task needs an answer from a fixed set (yes or no, label, score) about each unit of text or code;
+- to ask about a property that the unit shows, such as what the text contains or what the code does, and to put each exception of a rule into `criteria`;
+- to put facts shared by all units into `task` and to pass code as file line ranges;
+- to test each question on units with known answers before a full run;
+- to treat a unit as a candidate when `truth` is 0.3 or more, or when `choice` selects a violation category, and to read each candidate before acting on it.
+
 ## `classify`
 
 Supply a non-empty `objects` list, a non-blank `task`, and a non-empty `questions` map. Object IDs must be non-empty and unique within the call. Each object has exactly one source form:

@@ -29,13 +29,12 @@ func New(classifier IClassifier) *mcp.Server {
 	srv := mcp.NewServer(identity, nil)
 	handler := &Service{classifier: classifier, input: compileSchema(inputSchema), output: compileSchema(outputSchema)}
 	tool := &mcp.Tool{
-		Meta:        nil,
-		Annotations: nil,
-		Name:        "classify",
-		Title:       "",
-		Icons:       nil,
-		Description: "Classify texts, local files, or line ranges with choice, truth, and score questions. " +
-			"Write task, instructions, and criteria in ASD-STE100, unless the classification needs another language.",
+		Meta:         nil,
+		Annotations:  nil,
+		Name:         "classify",
+		Title:        "",
+		Icons:        nil,
+		Description:  toolDescription,
 		InputSchema:  json.RawMessage(inputSchema),
 		OutputSchema: json.RawMessage(outputSchema),
 	}

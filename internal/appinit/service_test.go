@@ -242,6 +242,19 @@ func (s *classificationSuite) TestAssessmentsAndSchemas() {
 	}
 }
 
+// TestToolGuidance checks that the tool description gives usage rules to every agent that can call the tool.
+func (s *classificationSuite) TestToolGuidance() {
+	session := s.connect(func(w http.ResponseWriter, _ *http.Request) {
+		s.Fail("tool listing must not contact endpoint")
+		w.WriteHeader(http.StatusInternalServerError)
+	}, time.Minute)
+	tools, err := session.ListTools(s.T().Context(), nil)
+	s.Require().NoError(err)
+	s.Require().Len(tools.Tools, 1)
+	s.Contains(tools.Tools[0].Description, "Unit is candidate when `truth` is 0.3 or more")
+	s.Empty(session.InitializeResult().Instructions)
+}
+
 // TestArgumentsFailBeforeHTTP rejects malformed shared definitions without contacting the endpoint.
 func (s *classificationSuite) TestArgumentsFailBeforeHTTP() {
 	var calls atomic.Int64

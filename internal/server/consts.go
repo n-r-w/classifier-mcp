@@ -480,6 +480,23 @@ const outputSchema = `{
   }
 }`
 
+// toolDescription tells each agent that can call classify what the tool does,
+// when to call it, and how to write questions that separate answers.
+const toolDescription = "Classify texts, local files, or line ranges with choice, truth, and score questions. " +
+	"Write task, instructions, and criteria in ASD-STE100, unless the classification needs another language.\n" +
+	"Use `classify` when task needs answer from fixed set (yes or no, label, score) " +
+	"about each unit of text or code: function, comment, sentence, log record.\n" +
+	"1. Ask about property that unit shows: what text contains or what code does. " +
+	"Do not ask for verdict of rule, for example \"violates rule X\" or \"must be method\".\n" +
+	"2. Put each exception of rule into criteria: into `false` of `truth`, or into own category of `choice`.\n" +
+	"3. Put facts that all units need into `task`. Pass code as file with line range.\n" +
+	"4. Check all units and all questions of one category in one call.\n" +
+	"5. Before full run, check each question on units with known answer: units that violate rule " +
+	"and units that comply, other than examples in criteria. When unit is on wrong side of threshold, " +
+	"change question. When change does not help, check rule yourself.\n" +
+	"6. Unit is candidate when `truth` is 0.3 or more, or when `choice` selects category of violation. " +
+	"Read candidate before you act on it."
+
 // Optional assessment field names are shared by the projection serializers.
 const (
 	fieldConfidence    = "confidence"
