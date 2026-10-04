@@ -91,7 +91,7 @@ func (s *startupSuite) TestNativeSourceTraversal() {
 	}
 	arguments, err := json.Marshal(map[string]any{
 		"objects": objects, "task": "identify ticket",
-		"questions": map[string]any{"q": map[string]any{"type": "noul", "instructions": "is this a ticket?"}},
+		"questions": map[string]any{"q": map[string]any{"type": "truth", "instructions": "is this a ticket?"}},
 	})
 	s.Require().NoError(err)
 	result, err := session.CallTool(ctx, &mcp.CallToolParams{

@@ -55,7 +55,7 @@ Improve the main LLM's efficiency and reduce its cost of processing files by del
   - Origin: source, the user's clarification that any text file is in scope and extension restrictions are inappropriate.
   - Goal: Apply classification to text files without arbitrary exclusions.
   - Goal achievement: Partial. Includes source code and other text files.
-- [x] FRQ-04: Support multiple independent assessments of each object: category selection, condition checks, and assessments on caller-defined ordered scales. Return compact or full assessment results, as selected by the caller.
+- [x] FRQ-04: Support multiple independent assessments of each object: `choice`, numeric `truth` in `[0, 1]`, and `score` on caller-defined ordered scales. Return compact or full results, as selected by the caller.
   - Origin: source, the supplied CodeQuality.yaml scenario, the user's selection of all three assessment types, and approval of the requirements.
   - Goal: Delegate several classification decisions together.
   - Goal achievement: Partial. Covers the agreed assessment types without requiring the main LLM to make those judgments itself.
@@ -84,7 +84,7 @@ None for the agreed requirements. Technical choices remain for the technical sol
 User-specified integration constraints:
 
 - Provide the tool through MCP.
-- Use the System One API contract. The integration is not restricted to Jev.
+- Use the System One API contract: MCP `truth` maps to HTTP `noul`. The integration is not restricted to Jev.
 - Require an explicitly configured model identifier and API endpoint URL through environment variables. Neither setting has a built-in default.
 - Supply credentials through environment configuration, either inherited by the server process or supplied in the MCP client's server configuration.
 - Support OpenRouter and other endpoints that implement the same System One request and response contract.

@@ -63,7 +63,7 @@ func (s *classificationSuite) TestProviderScoreValues() {
 			}
 			s.Equal(expectedScore, answers["urgency"])
 			s.Equal(expectedChoice, answers["team"])
-			s.Equal(map[string]any{"noul": float64(0)}, answers["condition"])
+			s.Equal(map[string]any{"truth": float64(0)}, answers["condition"])
 		})
 	}
 }
@@ -117,7 +117,7 @@ func (s *classificationSuite) TestIndependentFailuresAreNormalBatchResults() {
   "task": "task",
   "questions": {
     "q": {
-      "type": "noul",
+      "type": "truth",
       "instructions": "condition"
     }
   }

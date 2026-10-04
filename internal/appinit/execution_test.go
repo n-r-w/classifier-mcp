@@ -64,7 +64,7 @@ func (s *classificationSuite) TestConcurrentCallsShareCapacityAndKeepOrder() {
     {"id":"%[1]s0","source":{"type":"text","text":"%[1]s0"}},
     {"id":"%[1]s1","source":{"type":"text","text":"%[1]s1"}},
     {"id":"%[1]s2","source":{"type":"text","text":"%[1]s2"}}
-   ],"task":"task","questions":{"q":{"type":"noul","instructions":"condition"}}}`, prefix)),
+   ],"task":"task","questions":{"q":{"type":"truth","instructions":"condition"}}}`, prefix)),
 		}
 		result, err := session.CallTool(ctx, params)
 		s.NoError(err)

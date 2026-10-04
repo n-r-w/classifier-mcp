@@ -85,7 +85,7 @@ const validArguments = `{
       }
     },
     "condition": {
-      "type": "noul",
+      "type": "truth",
       "instructions": "Condition?"
     },
     "urgency": {
@@ -190,6 +190,7 @@ func (s *classificationSuite) TestAssessmentsAndSchemas() {
 		s.Equal(map[string]any{"task": "Classify", "content": "private source"}, body["state"])
 		var input map[string]any
 		s.NoError(json.Unmarshal([]byte(validArguments), &input))
+		input["questions"].(map[string]any)["condition"].(map[string]any)["type"] = "noul"
 		s.Equal(input["questions"], body["questions"])
 		_, err := w.Write([]byte(validAnswer))
 		s.NoError(err)
@@ -214,7 +215,7 @@ func (s *classificationSuite) TestAssessmentsAndSchemas() {
 			data, err := json.Marshal(input)
 			s.Require().NoError(err)
 			result := s.call(session, string(data))
-			s.False(result.IsError)
+			s.Require().False(result.IsError)
 			output := s.structured(result)
 			s.Require().NoError(resolved.Validate(output))
 			results := output["results"].([]any)
@@ -226,7 +227,7 @@ func (s *classificationSuite) TestAssessmentsAndSchemas() {
 			score := answers["urgency"].(map[string]any)
 			s.InDelta(float64(0), team["confidence"], 0)
 			s.InDelta(0.5, team["probability"], 0)
-			s.Equal(map[string]any{"noul": float64(0)}, answers["condition"])
+			s.Equal(map[string]any{"truth": float64(0)}, answers["condition"])
 			s.InDelta(1.6, score["score"], 0)
 			s.InDelta(float64(0), score["confidence"], 0)
 			if mode != "full" {
@@ -268,7 +269,7 @@ func (s *classificationSuite) TestArgumentsFailBeforeHTTP() {
   "task": "x",
   "questions": {
     "q": {
-      "type": "noul",
+      "type": "truth",
       "instructions": "x"
     }
   }
@@ -276,6 +277,9 @@ func (s *classificationSuite) TestArgumentsFailBeforeHTTP() {
 	}
 	changes := []func(map[string]any){
 		func(v map[string]any) { v["task"] = " \t" },
+		func(v map[string]any) {
+			v["questions"].(map[string]any)["condition"].(map[string]any)["type"] = "noul"
+		},
 		func(v map[string]any) { v["result_mode"] = nil },
 		func(v map[string]any) { v["result_mode"] = "unknown" },
 		func(v map[string]any) { v["extra"] = true },

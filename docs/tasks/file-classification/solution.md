@@ -49,7 +49,7 @@ OpenRouter is a supported System One endpoint. Other endpoints must implement th
 Use the three System One assessment types:
 
 - Choice for selecting a category from caller-defined alternatives.
-- Noul for the probability that a caller-defined condition holds.
+- Noul (`noul`) for the HTTP probability that a caller-defined condition holds; MCP uses `truth`.
 - Score for assessment on a caller-defined ordered scale.
 
 Question instructions and criteria come from the caller. The model input contains the acquired content, its source location when applicable, and the caller's task. The adapter maps internal classification models to the System One representation.
@@ -76,7 +76,7 @@ Covers FRQ-04 and FRQ-05.
 
 Return compact assessments by default. Allow the caller to request full probability distributions.
 
-A compact Choice retains the selected category, its probability, and model-provided confidence when present. A compact Score retains the scale assessment and model-provided confidence when present. A Noul already consists of one probability and does not need a separate compact representation.
+A compact Choice retains the selected category, its probability, and model-provided confidence when present. A compact Score retains the scale assessment and model-provided confidence when present. Truth consists of one probability in both modes.
 
 Full results contain the requested probability distributions. The caller retains scale descriptions for interpretation. Preserve the meanings of probability and confidence rather than using those terms interchangeably. An absent optional value is not a zero value.
 
@@ -140,7 +140,7 @@ Live System One behavior and MCP client rendering have not been tested. These ar
 
 ## MCP contract supplement
 
-This supplement specifies the proposed external contract for review. It does not describe an implemented tool. The examples contain illustrative classifier values, not results of live model calls.
+This supplement specifies the caller contract. The examples contain illustrative classifier values, not results of live model calls.
 
 ### Tool inventory
 
@@ -170,7 +170,7 @@ A text source contains:
 A file source contains:
 
 - `type`: required string with the value `file`.
-- `path`: required non-empty string identifying a local path. Absolute paths are used directly. Relative paths are resolved against the server process's working directory.
+- `path`: required non-empty string identifying a local UTF-8 path. Use absolute paths. Relative paths are resolved against the server process's working directory.
 - `lines`: optional object containing required integer fields `start` and `end`. Both are 1-based and inclusive. Omission means the whole file. There is no default boundary and no open-ended range.
 
 For a requested range, `1 <= start <= end` must hold, and both boundaries must exist in the file. The input schema checks the boundary field types; the content boundary checks the numerical bounds per object. A bounds failure produces an error for that object rather than silently shortening the range. Two fragments from the same path have different object IDs, so their outcomes remain distinguishable.
@@ -179,10 +179,12 @@ The source forms are exclusive: `text` does not accept `path` or `lines`; `file`
 
 ### Question definitions
 
+Write `task`, `instructions`, and `criteria` in ASD-STE100, unless the classification needs another language. Object content retains its original language.
+
 Every question has required `type` and `instructions` fields:
 
-- `type`: exactly one of `choice`, `noul`, and `score`.
-- `instructions`: a string, JSON object, or JSON array describing the independent question and its context. A string containing only whitespace is invalid. Structured guidance is passed through as System One guidance without changing numeric values, including identifiers larger than 2^53. It is not interpreted as another source reference.
+- `type`: exactly one of `choice`, `truth`, and `score`.
+- `instructions`: a string, JSON object, or JSON array describing the independent question and its context. A string containing only whitespace is invalid. Objects and arrays contain structured guidance, passed to System One without changing numeric values, including identifiers larger than 2^53. It is not interpreted as another source reference.
 
 Question IDs associate answers with definitions. IDs are not classification criteria and do not replace instructions. Questions cannot refer to another question's answer.
 
@@ -192,7 +194,7 @@ A `choice` question also has required `criteria`:
 - Category names are non-empty, case-sensitive strings. These names are the complete set of alternatives.
 - Each description is a string, JSON object, JSON array, or `null`. A `null` description means that the category name supplies the guidance without a separate description.
 
-A `noul` question has optional `criteria`:
+A `truth` question has optional `criteria`:
 
 - Omission means the condition is defined by `instructions` alone.
 - When supplied, `criteria` is an object containing exactly `true` and `false`. Both values are strings, JSON objects, or JSON arrays describing when the condition holds and when it does not hold.
@@ -211,7 +213,7 @@ The server does not impose Jev-specific limits on category counts, scale lengths
 For each object, the server sends one HTTP request containing:
 
 - `model`: the explicitly configured model identifier, unchanged.
-- `questions`: the common question map with IDs, types, instructions, and criteria as defined above.
+- `questions`: the common question map; the adapter maps MCP `truth` to HTTP `noul` and preserves IDs and guidance.
 - `state`: an object containing `task` and the acquired `content`. For a file reference, it also contains `source` with the resolved `path` and the requested `lines` when present. Inline text has no file location.
 
 For example, a referenced fragment becomes the following state. The content is transmitted to the classifier, not returned to the main LLM:
@@ -242,9 +244,9 @@ Each object is atomic. If any required answer is absent or incompatible, its ent
 
 Compact Choice contains `choice`, selected `probability` in `[0, 1]`, and optional provider `confidence` in `[0, 1]`. Full mode adds `probabilities` with every caller category key. The selected probability is the provider distribution entry for the selected category. Unknown categories and missing required distributions produce item errors. The server preserves the selected category and distribution values without total or argmax checks.
 
-#### Noul results
+#### Truth results
 
-Noul contains only `noul`, the reported probability in `[0, 1]`, in both modes. For `noul: 0.8`, the caller receives the reported likelihood 0.8.
+Truth contains only `truth`, the reported probability in `[0, 1]`, in both modes. For `truth: 0.8`, the caller receives the reported likelihood 0.8.
 
 #### Score results
 
@@ -252,7 +254,7 @@ Compact Score contains the reported `score` within `[0, len(criteria) - 1]` and 
 
 For example, compact output can be `{"score": 1.97, "confidence": 0.96}`. Full output adds `"probabilities": {"0": 0, "1": 0.02, "2": 0.98}`. The server preserves all these values; it does not replace the score with a recomputed weighted mean.
 
-Absent or null provider confidence is omitted. A reported zero remains present. Confidence and selected Choice probability retain their separate meanings.
+Absent or null provider confidence is omitted. A reported zero remains present. Low confidence means uncertain; it is not the probability of correctness.
 
 ### Object errors
 
@@ -290,9 +292,9 @@ This call uses inline text, a whole file, and two different fragments of the sam
     "arguments": {
       "objects": [
         {"id": "inline", "source": {"type": "text", "text": "Checkout fails after I click Pay."}},
-        {"id": "whole", "source": {"type": "file", "path": "tickets.txt"}},
-        {"id": "fragment-a", "source": {"type": "file", "path": "tickets.txt", "lines": {"start": 10, "end": 20}}},
-        {"id": "fragment-b", "source": {"type": "file", "path": "tickets.txt", "lines": {"start": 30, "end": 40}}}
+        {"id": "whole", "source": {"type": "file", "path": "/workspace/tickets.txt"}},
+        {"id": "fragment-a", "source": {"type": "file", "path": "/workspace/tickets.txt", "lines": {"start": 10, "end": 20}}},
+        {"id": "fragment-b", "source": {"type": "file", "path": "/workspace/tickets.txt", "lines": {"start": 30, "end": 40}}}
       ],
       "task": "Assess support text for defect reports and urgency.",
       "questions": {
@@ -302,7 +304,7 @@ This call uses inline text, a whole file, and two different fragments of the sam
           "criteria": {"payments": "Checkout or billing", "other": "Other issues"}
         },
         "is_defect": {
-          "type": "noul",
+          "type": "truth",
           "instructions": "Does this content report broken product behavior?",
           "criteria": {"true": "Broken or unexpected behavior", "false": "A question or feature request"}
         },
@@ -318,7 +320,7 @@ This call uses inline text, a whole file, and two different fragments of the sam
 }
 ```
 
-For illustration, assume the server working directory is `/workspace` and `tickets.txt` has 35 lines. The first three objects succeed. `fragment-b` fails because its requested end line is 40. The following is the complete `structuredContent`, not the outer JSON-RPC response:
+For illustration, assume `/workspace/tickets.txt` has 35 lines. The first three objects succeed. `fragment-b` fails because its requested end line is 40. The following is the complete `structuredContent`, not the outer JSON-RPC response:
 
 ```json
 {
@@ -332,7 +334,7 @@ For illustration, assume the server working directory is `/workspace` and `ticke
           "confidence": 0.8
         },
         "is_defect": {
-          "noul": 0.95
+          "truth": 0.95
         },
         "urgency": {
           "score": 1.6,
@@ -348,7 +350,7 @@ For illustration, assume the server working directory is `/workspace` and `ticke
           "probability": 0.7
         },
         "is_defect": {
-          "noul": 0.4
+          "truth": 0.4
         },
         "urgency": {
           "score": 0.8
@@ -364,7 +366,7 @@ For illustration, assume the server working directory is `/workspace` and `ticke
           "confidence": 0
         },
         "is_defect": {
-          "noul": 0
+          "truth": 0
         },
         "urgency": {
           "score": 1,
@@ -384,7 +386,7 @@ The examples distinguish omitted confidence from reported zero. The outer MCP re
 
 #### Full output
 
-For the same call with `result_mode: "full"`, the following is the complete `structuredContent`. Choice adds every category probability. Score adds every level probability. Noul, object associations, and the source error have the same shapes.
+For the same call with `result_mode: "full"`, the following is the complete `structuredContent`. Choice adds every category probability. Score adds every level probability. Truth, object associations, and the source error have the same shapes.
 
 ```json
 {
@@ -402,7 +404,7 @@ For the same call with `result_mode: "full"`, the following is the complete `str
           }
         },
         "is_defect": {
-          "noul": 0.95
+          "truth": 0.95
         },
         "urgency": {
           "score": 1.6,
@@ -427,7 +429,7 @@ For the same call with `result_mode: "full"`, the following is the complete `str
           }
         },
         "is_defect": {
-          "noul": 0.4
+          "truth": 0.4
         },
         "urgency": {
           "score": 0.8,
@@ -452,7 +454,7 @@ For the same call with `result_mode: "full"`, the following is the complete `str
           }
         },
         "is_defect": {
-          "noul": 0
+          "truth": 0
         },
         "urgency": {
           "score": 1,
@@ -487,7 +489,7 @@ A smaller call illustrates the complete envelope without repeating the mixed-lis
     "arguments": {
       "objects": [{"id": "note", "source": {"type": "text", "text": "Please add a dark theme."}}],
       "task": "Identify defect reports.",
-      "questions": {"is_defect": {"type": "noul", "instructions": "Does this report broken behavior?"}}
+      "questions": {"is_defect": {"type": "truth", "instructions": "Does this report broken behavior?"}}
     }
   }
 }
@@ -505,7 +507,7 @@ A smaller call illustrates the complete envelope without repeating the mixed-lis
           "id": "note",
           "answers": {
             "is_defect": {
-              "noul": 0
+              "truth": 0
             }
           }
         }
@@ -514,7 +516,7 @@ A smaller call illustrates the complete envelope without repeating the mixed-lis
     "content": [
       {
         "type": "text",
-        "text": "{\"results\":[{\"id\":\"note\",\"answers\":{\"is_defect\":{\"noul\":0}}}]}"
+        "text": "{\"results\":[{\"id\":\"note\",\"answers\":{\"is_defect\":{\"truth\":0}}}]}"
       }
     ]
   }

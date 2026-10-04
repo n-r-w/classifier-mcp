@@ -77,7 +77,7 @@ type questionInput struct {
 	Type string `json:"type"`
 	// Caller string, object, or array; decoded numbers retain their original precision.
 	Instructions any `json:"instructions"`
-	// Raw rubric JSON; None is allowed only for Noul.
+	// Raw rubric JSON; None is allowed only for truth.
 	Criteria mo.Option[json.RawMessage] `json:"criteria,omitzero"`
 }
 
@@ -131,10 +131,10 @@ func (o choiceOutput) MarshalJSON() ([]byte, error) {
 	return json.Marshal(fields)
 }
 
-// noulOutput has one probability in either result mode.
-type noulOutput struct {
-	// Noul is the reported likelihood of the condition in [0, 1].
-	Noul float64 `json:"noul"`
+// truthOutput has one probability in either result mode.
+type truthOutput struct {
+	// Truth is the reported likelihood of the condition in [0, 1].
+	Truth float64 `json:"truth"`
 }
 
 // scoreOutput retains the provider assessment and requested distribution.

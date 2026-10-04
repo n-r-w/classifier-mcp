@@ -19,7 +19,7 @@ func (s *startupSuite) TestStructuredNumbersAcrossStdio() {
   "questions":{
    "team":{"type":"choice","instructions":{"ticket_id":9007199254740993},
     "criteria":{"a":{"entity_id":9007199254740995},"b":null}},
-   "condition":{"type":"noul","instructions":[{"ticket_id":9007199254740993}],
+   "condition":{"type":"truth","instructions":[{"ticket_id":9007199254740993}],
     "criteria":{"true":{"entity_id":9007199254740995},"false":"Other"}},
    "urgency":{"type":"score","instructions":{"ticket_id":9007199254740993},
     "criteria":[{"level_id":9007199254740997},["Higher",{"level_id":9007199254740999}]]}
@@ -38,7 +38,9 @@ func (s *startupSuite) TestStructuredNumbersAcrossStdio() {
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
-		s.Equal(input["questions"], request["questions"])
+		expected := input["questions"].(map[string]any)
+		expected["condition"].(map[string]any)["type"] = "noul"
+		s.Equal(expected, request["questions"])
 		score := map[string]any{
 			"type":          "score",
 			"score":         0.25,
@@ -107,7 +109,9 @@ func (s *startupSuite) TestStructuredNumbersAcrossStdio() {
 	object := structured["results"].([]any)[0].(map[string]any)
 	s.Require().False(result.IsError)
 	s.Require().Len(object, 2)
-	score := object["answers"].(map[string]any)["urgency"].(map[string]any)
+	answers := object["answers"].(map[string]any)
+	s.Equal(map[string]any{"truth": json.Number("0")}, answers["condition"])
+	score := answers["urgency"].(map[string]any)
 	s.Equal(map[string]any{
 		"score": json.Number("0.25"), "confidence": json.Number("0"),
 		"probabilities": map[string]any{"0": json.Number("0.75"), "1": json.Number("0.25")},

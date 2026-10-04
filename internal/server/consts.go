@@ -42,7 +42,7 @@ const inputSchema = `{
                   },
                   "path": {
                     "type": "string",
-                    "description": "Local UTF-8 path, absolute or relative to the server's working directory."
+                    "description": "Absolute local UTF-8 path."
                   },
                   "lines": {
                     "type": "object",
@@ -153,7 +153,7 @@ const inputSchema = `{
               "type": {
                 "type": "string",
                 "enum": [
-                  "noul"
+                  "truth"
                 ],
                 "description": "Estimate condition truth probability in [0, 1], not a boolean."
               },
@@ -205,7 +205,7 @@ const inputSchema = `{
                   "false"
                 ],
                 "additionalProperties": false,
-                "description": "Optional descriptions for the condition being true or false."
+                "description": "Optional; if set, describe both outcomes."
               }
             },
             "required": [
@@ -270,7 +270,7 @@ const inputSchema = `{
         "type": "string",
         "minLength": 1
       },
-      "description": "Every object receives all questions. Questions are independent and do not use other answers."
+      "description": "All questions apply independently to each object. Objects and arrays contain structured guidance."
     },
     "result_mode": {
       "type": "string",
@@ -278,10 +278,10 @@ const inputSchema = `{
         "compact",
         "full"
       ],
-      "description": "compact (default): Choice returns choice/probability and optional confidence; ` +
-	`Noul returns noul; Score returns score and optional confidence. ` +
-	`full adds probabilities to Choice and Score. ` +
-	`Confidence reflects provider uncertainty, not probability of correctness."
+      "description": "compact (default): choice returns choice and probability; truth returns truth; ` +
+	`score returns score. ` +
+	`Confidence is optional; low means uncertain, not probability of correctness. ` +
+	`full adds probability maps for choice and score."
     }
   },
   "required": [
@@ -318,13 +318,13 @@ const outputSchema = `{
                       "properties": {
                         "choice": {
                           "type": "string",
-                          "description": "Provider-selected category from the question's criteria."
+                          "description": "Selected category from the question's criteria."
                         },
                         "probability": {
                           "type": "number",
                           "minimum": 0,
                           "maximum": 1,
-                          "description": "Provider probability of the selected category, in [0, 1]."
+                          "description": "Probability of the selected category, in [0, 1]."
                         },
                         "confidence": {
                           "$ref": "#/$defs/confidence"
@@ -341,13 +341,13 @@ const outputSchema = `{
                       "properties": {
                         "choice": {
                           "type": "string",
-                          "description": "Provider-selected category from the question's criteria."
+                          "description": "Selected category from the question's criteria."
                         },
                         "probability": {
                           "type": "number",
                           "minimum": 0,
                           "maximum": 1,
-                          "description": "Provider probability of the selected category, in [0, 1]."
+                          "description": "Probability of the selected category, in [0, 1]."
                         },
                         "confidence": {
                           "$ref": "#/$defs/confidence"
@@ -373,7 +373,7 @@ const outputSchema = `{
                     {
                       "type": "object",
                       "properties": {
-                        "noul": {
+                        "truth": {
                           "type": "number",
                           "minimum": 0,
                           "maximum": 1,
@@ -381,7 +381,7 @@ const outputSchema = `{
                         }
                       },
                       "required": [
-                        "noul"
+                        "truth"
                       ],
                       "additionalProperties": false
                     },
@@ -470,12 +470,12 @@ const outputSchema = `{
       "type": "number",
       "minimum": 0,
       "maximum": 1,
-      "description": "Provider confidence based on uncertainty, not the probability of a correct answer."
+      "description": "Optional; low means uncertain, not probability of correctness."
     },
     "score": {
       "type": "number",
       "minimum": 0,
-      "description": "Provider score on criteria indices [0, len(criteria)-1]; may be fractional."
+      "description": "Score on criteria indices [0, len(criteria)-1]; may be fractional."
     }
   }
 }`

@@ -167,7 +167,7 @@ func (s *startupSuite) TestStdioConnection() {
   "task": "task",
   "questions": {
     "q": {
-      "type": "noul",
+      "type": "truth",
       "instructions": "condition"
     }
   }
@@ -181,7 +181,7 @@ func (s *startupSuite) TestStdioConnection() {
 	params.Arguments = json.RawMessage(
 		`{"objects":[{"id":"file","source":{
  "type":"file","path":"ticket.txt","lines":{"start":2,"end":2}
- }}],"task":"task","questions":{"q":{"type":"noul","instructions":"condition"}}}`,
+ }}],"task":"task","questions":{"q":{"type":"truth","instructions":"condition"}}}`,
 	)
 	fileResult, fileErr := session.CallTool(ctx, params)
 	s.Require().NoError(fileErr)

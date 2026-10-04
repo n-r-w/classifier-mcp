@@ -41,7 +41,8 @@ func parseCommand(input classifyInput) (Command, error) {
 			questions[id] = mo.NewEither3Arg1[domain.ChoiceQuestion, domain.NoulQuestion, domain.ScoreQuestion](
 				domain.ChoiceQuestion{Instructions: question.Instructions, Criteria: criteria},
 			)
-		case domain.NoulKind:
+		case "truth":
+			// System One uses Noul for the caller's truth question.
 			var criteria map[string]any
 			if question.Criteria.IsSome() {
 				if err := decodeJSON(question.Criteria.OrEmpty(), &criteria); err != nil {

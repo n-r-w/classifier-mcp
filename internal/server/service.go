@@ -34,9 +34,8 @@ func New(classifier IClassifier) *mcp.Server {
 		Name:        "classify",
 		Title:       "",
 		Icons:       nil,
-		Description: "Classify texts, local files, or line ranges with independent choice, noul, and score questions. " +
-			"Return one outcome per object; compact answers (default) or full probability distributions. " +
-			"Use only ASD-STE100 (Simplified Technical English), unless the task requires another language.",
+		Description: "Classify texts, local files, or line ranges with choice, truth, and score questions. " +
+			"Write task, instructions, and criteria in ASD-STE100, unless the classification needs another language.",
 		InputSchema:  json.RawMessage(inputSchema),
 		OutputSchema: json.RawMessage(outputSchema),
 	}

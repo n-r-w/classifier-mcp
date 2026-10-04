@@ -67,7 +67,7 @@ claude mcp get classifier-mcp
 
 For example, ask Claude: "Use classifier-mcp's classify tool to assess `/absolute/path/to/tickets.txt` for defect reports and urgency. Pass the file reference rather than reading its contents first."
 
-Use absolute file paths in agent requests when the server's working directory is uncertain. Optional execution controls are listed in [Startup](#startup).
+Use absolute file paths in agent requests. Optional execution controls are listed in [Startup](#startup).
 
 See the [Claude Code MCP documentation](https://code.claude.com/docs/en/mcp) for configuration scopes and server management.
 
@@ -80,22 +80,24 @@ Configure a local stdio server with the executable's absolute path as its comman
 Supply a non-empty `objects` list, a non-blank `task`, and a non-empty `questions` map. Object IDs must be non-empty and unique within the call. Each object has exactly one source form:
 
 - Inline text: `{"type": "text", "text": "content"}`. The string `text` is required; an empty string is allowed.
-- Whole local file: `{"type": "file", "path": "tickets.txt"}`.
-- Local file fragment: `{"type": "file", "path": "tickets.txt", "lines": {"start": 10, "end": 20}}`.
+- Whole local file: `{"type": "file", "path": "/workspace/tickets.txt"}`.
+- Local file fragment: `{"type": "file", "path": "/workspace/tickets.txt", "lines": {"start": 10, "end": 20}}`.
 
-Absolute paths identify files directly. Relative paths use native filesystem resolution against the server process's working directory, including directory symlinks followed by `..`. Windows drive-relative and root-relative paths use native drive rules. Files are read as UTF-8 text, regardless of extension. File state sent to System One includes the resolved path and any caller-supplied range.
+Use absolute paths to identify files directly. Relative paths use native filesystem resolution against the server process's working directory, including directory symlinks followed by `..`. Windows drive-relative and root-relative paths use native drive rules. Files are read as UTF-8 text, regardless of extension. File state sent to System One includes the resolved path and any caller-supplied range.
 
 Both range boundaries are required integers, starting at 1 and inclusive. Every requested line must exist, and `start <= end` must hold. Lines end at LF; CRLF bytes and selected line terminators are preserved. A final terminator does not create another line. An empty file has zero lines and can be classified as a whole file. Each call reads its referenced content afresh.
 
 The server reports unreadable files, invalid UTF-8, blank paths, and numerical range failures per object. It does not shorten ranges, cache content, parse code, retrieve URLs, or extract binary documents. Text sources reject `path` and `lines`; file sources reject `text`.
 
-Each question has a non-empty ID, a `type`, and `instructions`. Instructions can be a non-blank string, an object, or an array. Numbers in structured instructions and criteria are passed unchanged, including identifiers larger than 2^53. Question types are:
+Write `task`, `instructions`, and `criteria` in ASD-STE100, unless the classification needs another language. Object content retains its original language.
 
-- `choice`: requires a non-empty category-to-description `criteria` object. Descriptions can be strings, objects, arrays, or null. Compact results contain `choice`, `probability`, and optional provider `confidence`.
-- `noul`: returns the probability that a condition holds as `noul`. Optional `criteria` must contain exactly `true` and `false`, with string, object, or array descriptions.
-- `score`: requires a non-empty ordered `criteria` array of string, object, or array descriptions. Compact results contain a provider-reported `score` from 0 through the last level index, and optional provider `confidence`.
+Each question has a non-empty ID, a `type`, and `instructions`. Instructions can be a non-blank string, an object, or an array. Objects and arrays contain structured guidance. Numbers in structured instructions and criteria are passed unchanged, including identifiers larger than 2^53. Question types are:
 
-`result_mode` is `compact` by default, or `full`. Full Choice adds `probabilities`. Full Score adds `probabilities`, keyed by decimal level indices. The caller retains the submitted scale descriptions. Noul has the same shape in both modes. Optional fields must be omitted rather than supplied as null, except null Choice descriptions. Defined input objects reject unknown fields; guidance objects keep arbitrary keys.
+- `choice`: requires a non-empty category-to-description `criteria` object. Descriptions can be strings, objects, arrays, or null. Compact results contain `choice`, `probability`, and optional `confidence`.
+- `truth`: returns the probability that a condition holds as numeric `truth` in `[0, 1]`. Optional `criteria` must contain exactly `true` and `false`, with string, object, or array descriptions.
+- `score`: requires a non-empty ordered `criteria` array of string, object, or array descriptions. Compact results contain a reported `score` from 0 through the last level index, and optional `confidence`.
+
+`result_mode` is `compact` by default, or `full`. Full Choice adds `probabilities`. Full Score adds `probabilities`, keyed by decimal level indices. The caller retains the submitted scale descriptions. Truth has the same shape in both modes. Optional fields must be omitted rather than supplied as null, except null Choice descriptions. Defined input objects reject unknown fields; guidance objects keep arbitrary keys.
 
 Example arguments:
 
@@ -103,20 +105,20 @@ Example arguments:
 {
   "objects": [
     {"id": "ticket", "source": {"type": "text", "text": "Checkout fails after Pay."}},
-    {"id": "whole", "source": {"type": "file", "path": "tickets.txt"}},
-    {"id": "fragment", "source": {"type": "file", "path": "tickets.txt", "lines": {"start": 10, "end": 20}}}
+    {"id": "whole", "source": {"type": "file", "path": "/workspace/tickets.txt"}},
+    {"id": "fragment", "source": {"type": "file", "path": "/workspace/tickets.txt", "lines": {"start": 10, "end": 20}}}
   ],
   "task": "Assess support tickets.",
   "questions": {
     "team": {"type": "choice", "instructions": "Which team owns this?", "criteria": {"payments": "Billing", "other": null}},
-    "defect": {"type": "noul", "instructions": "Does this report broken behavior?"},
+    "defect": {"type": "truth", "instructions": "Does this report broken behavior?"},
     "urgency": {"type": "score", "instructions": "How urgent is this?", "criteria": ["Can wait", "Fix soon", "Blocking"]}
   },
   "result_mode": "compact"
 }
 ```
 
-Results contain one entry per object in input order. A success contains exactly `id` and `answers`. An item failure contains exactly `id` and an `error` string with its concrete cause. The server returns the provider's values and optional confidence. Reported zero confidence remains present; missing or null confidence is omitted.
+Results contain one entry per object in input order. A success contains exactly `id` and `answers`. An item failure contains exactly `id` and an `error` string with its concrete cause. The server returns the provider's values and optional confidence. Low confidence means uncertain; it is not the probability of correctness. Reported zero confidence remains present; missing or null confidence is omitted.
 
 The server checks result types, required fields, numeric ranges, question IDs, selected categories, and distribution keys. The provider owns statistical calculations. For example, a reported Score of `1.97`, confidence `0.96`, and probabilities `{"0": 0, "1": 0.02, "2": 0.98}` are returned as supplied. Provider model, usage, and legend metadata are unused.
 

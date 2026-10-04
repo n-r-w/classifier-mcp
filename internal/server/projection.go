@@ -20,7 +20,7 @@ func projectSuccess(value Success, full bool) successOutput {
 			}
 			answers[id] = output
 		} else if assessment, isNoul := answer.Arg2(); isNoul {
-			answers[id] = noulOutput{Noul: assessment.Probability}
+			answers[id] = truthOutput{Truth: assessment.Probability}
 		} else if assessment, isScore := answer.Arg3(); isScore {
 			output := scoreOutput{
 				Score:         assessment.Value,
