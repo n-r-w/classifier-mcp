@@ -1,0 +1,85 @@
+name: CI and release
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    name: Lint and tests
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: Set up Task
+        uses: go-task/setup-task@a00fbb05ce67b35648be3c78cbc9fd85354c757e # v2.2.0
+        with:
+          version: '3.54.0'
+      - name: Lint
+        run: task lint
+      - name: Unit tests
+        run: task test
+      - name: Integration tests
+        run: task itest
+
+  release:
+    name: Build and upload release binaries
+    if: github.event_name == 'release'
+    needs: checks
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: Build release archives
+        shell: bash
+        run: |
+          build_dir="$(mktemp -d)"
+          trap 'rm -rf "$build_dir"' EXIT
+          mkdir -p dist
+
+          for target_os in linux darwin windows; do
+            for target_arch in amd64 arm64; do
+              binary=classifier-mcp
+              if [[ "$target_os" == windows ]]; then
+                binary+=.exe
+              fi
+
+              CGO_ENABLED=0 GOOS="$target_os" GOARCH="$target_arch" \
+                go build -trimpath -o "$build_dir/$binary" ./cmd/classifier-mcp
+
+              archive="dist/classifier-mcp_${target_os}_${target_arch}"
+              if [[ "$target_os" == windows ]]; then
+                zip -j "$archive.zip" "$build_dir/$binary"
+              else
+                tar -czf "$archive.tar.gz" -C "$build_dir" "$binary"
+              fi
+            done
+          done
+
+          (cd dist && sha256sum *.tar.gz *.zip > checksums.txt)
+      - name: Upload release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: gh release upload "$RELEASE_TAG" dist/* --clobber
