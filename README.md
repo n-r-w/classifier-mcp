@@ -2,6 +2,12 @@
 
 A stdio MCP server that classifies inline text, local text files, and caller-selected file fragments through a System One HTTP endpoint. Successful results contain assessments without source contents. Each failed object has a concise text cause.
 
+## What is System One?
+
+[System One](https://typesafe.ai/blog/introducing-system-one-models-and-jev) is TypeSafe AI's class of models for fast, structured decisions. Jev is its first public model. TypeSafe trains these models to produce probability estimates that reflect prediction accuracy.
+
+Typical generative LLMs produce text token by token, including JSON responses. TypeSafe describes Jev as evaluating predefined outputs in parallel and returning typed decisions with probabilities and confidence estimates. TypeSafe uses this approach to reduce latency and cost. For example, a caller can restrict a ticket's classification to `bug` or `feature`, and the model returns a label with a probability estimate. A schema-valid answer can still be an incorrect classification.
+
 ## Installation
 
 ### Download a release binary
