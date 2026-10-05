@@ -2,7 +2,9 @@
 
 A stdio MCP server that classifies inline text, local text files, and caller-selected file fragments through a System One HTTP endpoint. Successful results contain assessments without source contents. Each failed object has a concise text cause.
 
-## Download
+## Installation
+
+### Download a release binary
 
 Download the archive for your operating system and architecture from [GitHub Releases](https://github.com/n-r-w/classifier-mcp/releases). Linux and macOS archives use `.tar.gz`; Windows archives use `.zip`. Archive names use `darwin` for macOS. Choose `arm64` for Apple Silicon or an ARM64 computer, and `amd64` for an Intel or AMD x86-64 computer.
 
@@ -11,6 +13,16 @@ For example, `classifier-mcp_darwin_arm64.tar.gz` contains `classifier-mcp` for 
 Each release includes `checksums.txt` with SHA-256 hashes of the archives. On Linux, place the downloaded archive and `checksums.txt` in one directory and run `sha256sum --ignore-missing -c checksums.txt`.
 
 When a stable release or prerelease is published, GitHub Actions builds the tagged source and attaches the archives after the linter, unit tests, and integration tests pass. Draft releases have no automatic binary build.
+
+### Install with Go
+
+With Go 1.27 or later installed locally, run:
+
+```sh
+go install github.com/n-r-w/classifier-mcp/cmd/classifier-mcp@latest
+```
+
+Go installs `classifier-mcp` or `classifier-mcp.exe` on Windows into `GOBIN` when set, or into `bin` under the first `GOPATH` directory. Run `go env GOBIN GOPATH` to locate that directory, then configure your MCP client to launch the installed executable by its absolute path.
 
 ## Startup
 
@@ -26,7 +38,7 @@ Set these environment variables in the MCP client's server configuration or in t
 
 See [.env.example](.env.example). Endpoint URLs can include a query. Keep credentials in `SYSTEM_ONE_API_KEY`; endpoint user information and fragments are rejected. Missing endpoint or model settings stop startup with exit code 1.
 
-Configure the MCP client to launch the downloaded executable. To build from source, run `task build` and use `bin/classifier-mcp` or `bin/classifier-mcp.exe` on Windows. The executable inherits its environment; it does not read `.env`.
+Configure the MCP client to launch the installed executable. To build from source, run `task build` and use `bin/classifier-mcp` or `bin/classifier-mcp.exe` on Windows. The executable inherits its environment; it does not read `.env`.
 
 The server uses stdout for MCP and stderr for logs. Interrupt or terminate the process to stop it. Invalid operational settings stop startup with a diagnostic naming the setting.
 
@@ -38,7 +50,7 @@ Objects run in parallel, with one shared process-wide HTTP request bound. Defaul
 
 ### Claude Code
 
-Download or build the executable as described above. Replace `/absolute/path/to/classifier-mcp/bin/classifier-mcp` with its absolute path and `YOUR_OPENROUTER_API_KEY` with your OpenRouter key.
+Install the executable as described above. Replace `/absolute/path/to/classifier-mcp/bin/classifier-mcp` with its absolute path and `YOUR_OPENROUTER_API_KEY` with your OpenRouter key.
 
 From a Bash or Zsh terminal, register the server for all your Claude Code projects:
 
