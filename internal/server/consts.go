@@ -491,11 +491,13 @@ const toolDescription = "Classify texts, local files, or line ranges with choice
 	"2. Put each exception of rule into criteria: into `false` of `truth`, or into own category of `choice`.\n" +
 	"3. Put facts that all units need into `task`. Pass code as file with line range.\n" +
 	"4. Check all units and all questions of one category in one call.\n" +
-	"5. Before full run, check each question on units with known answer: units that violate rule " +
+	"5. Before full run, check each question that you write on units with known answer: units that violate rule " +
 	"and units that comply, other than examples in criteria. When unit is on wrong side of threshold, " +
-	"change question. When change does not help, check rule yourself.\n" +
+	"change question. When change does not help, check rule yourself. " +
+	"Question that you take ready from catalog or script passed this check: use it without check.\n" +
 	"6. Unit is candidate when `truth` is 0.3 or more, or when `choice` selects category of violation. " +
-	"Read candidate before you act on it."
+	"Read candidate before you act on it.\n" +
+	"7. Each object is one request that repeats `task` and all questions. Keep `task` and questions short."
 
 // Optional assessment field names are shared by the projection serializers.
 const (

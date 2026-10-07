@@ -110,8 +110,9 @@ The `classify` tool description carries usage rules, so every agent that can cal
 - to call `classify` when a task needs an answer from a fixed set (yes or no, label, score) about each unit of text or code;
 - to ask about a property that the unit shows, such as what the text contains or what the code does, and to put each exception of a rule into `criteria`;
 - to put facts shared by all units into `task` and to pass code as file line ranges;
-- to test each question on units with known answers before a full run;
-- to treat a unit as a candidate when `truth` is 0.3 or more, or when `choice` selects a violation category, and to read each candidate before acting on it.
+- to test each question that the agent writes on units with known answers before a full run, and to use ready questions from a catalog or script without this test;
+- to treat a unit as a candidate when `truth` is 0.3 or more, or when `choice` selects a violation category, and to read each candidate before acting on it;
+- to keep `task` and questions short, because each object is one request that repeats them.
 
 ## `classify`
 
